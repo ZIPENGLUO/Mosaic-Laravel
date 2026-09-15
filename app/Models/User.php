@@ -41,4 +41,34 @@ class User extends Authenticatable
     protected $casts = [
         'email_verified_at' => 'datetime',
     ];
+
+    /** 我创建的家庭：families.owner_id → users.id */
+    public function ownedFamilies()
+    {
+        return $this->hasMany(Family::class, 'owner_id');
+    }
+
+    /** 我的家庭身份记录：family_members.user_id → users.id */
+    public function familyMemberships()
+    {
+        return $this->hasMany(FamilyMember::class);
+    }
+
+    /** 我拥有的账本：ledgers.owner_id → users.id */
+    public function ledgers()
+    {
+        return $this->hasMany(Ledger::class, 'owner_id');
+    }
+
+    /** 我记录的流水：transactions.created_by → users.id */
+    public function transactions()
+    {
+        return $this->hasMany(Transaction::class, 'created_by');
+    }
+
+    /** 我上传的附件：attachments.uploaded_by → users.id */
+    public function attachments()
+    {
+        return $this->hasMany(Attachment::class, 'uploaded_by');
+    }
 }
