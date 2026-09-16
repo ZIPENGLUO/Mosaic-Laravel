@@ -9,8 +9,15 @@ class FamilyMember extends Model
 {
     use HasFactory;
 
-    public function familyMembership()
+    /** 所属家庭：family_members.family_id → families.id */
+    public function family()
     {
-        return $this->belongsTo(FamilyMember::class);
+        return $this->belongsTo(Family::class);
+    }
+
+    /** 对应账号：family_members.user_id → users.id */
+    public function user()
+    {
+        return $this->belongsTo(User::class);
     }
 }
