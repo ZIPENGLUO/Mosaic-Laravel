@@ -1,6 +1,6 @@
 # Mosaic 家庭财务系统 — 项目记忆
 
-> 最后更新：JWT 认证阶段完成时
+> 最后更新：阶段 3（基础资源 CRUD）账本接口进行中
 > 用途：记录项目全貌、进度、决策与待办，供后续开发/答辩参考
 
 ---
@@ -8,7 +8,7 @@
 ## 0. 一句话概括
 
 AI 生成的家庭记账前端（Vue3，纯静态 mock），配一套 Laravel 9 后端，做毕业设计。
-**当前进度：阶段 1（模型+关联+Seeder）和阶段 2（JWT 认证）已完成，下一步进入阶段 3（账本/流水业务接口）。**
+**当前进度：阶段 1（模型+关联+Seeder）、阶段 2（JWT 认证）已完成并提交；阶段 3（基础资源 CRUD）进行中 —— 账本（ledgers）接口已写完 `index`/`show`，未提交。**
 
 ---
 
@@ -64,7 +64,9 @@ AI 生成的家庭记账前端（Vue3，纯静态 mock），配一套 Laravel 9 
 260dcce  basedata         ← 7 张业务迁移
 de9bd09  关联             ← 8 个模型 + 28 个关联
 6d392a4  表关联seeder     ← DemoSeeder
-（JWT 认证尚未提交）
+d6af93c  jwtauth         ← JWT 认证（阶段 2，已提交）
+ab37028  docs: 添加项目记忆文档
+（阶段 3 的 ledger 代码尚未提交，见第 8.1 节）
 ```
 
 ---
@@ -185,6 +187,12 @@ de9bd09  关联             ← 8 个模型 + 28 个关联
 10. **路由模块化**：`routes/api.php`（总入口 require）→ `routes/api/auth.php`
 11. **修复认证返回**：`Authenticate::redirectTo()` 和 `Handler::unauthenticated()` 都改成返回 401 JSON
 12. **全链路实测通过**：登录→发 token、带 token 访问、无 token 401、密码错误 401、refresh 旧 token 作废、logout 作废
+13. **已提交**：commit `d6af93c jwtauth`（JWT 那批代码已入库，不再是工作区未提交状态）
+
+### 阶段 3：基础资源 CRUD（🟡 进行中）
+14. **账本接口**：`LedgerController` 的 `index`（返回"我创建的 + 我家庭的"账本）、`show`（先 404 再 403 归属校验）
+15. **路由模块化扩展**：新增 `routes/api/ledger.php`，`routes/api.php` 里 require
+16. 待做：账本的 store/update/destroy，以及 accounts / categories / 家庭成员
 
 ### 教学成果（用户是 Laravel 初学者）
 - 理解模型↔表映射、belongsTo/hasMany、N+1 与 `with()`、JWT 流程、401 vs 403、Model vs Controller 分工
@@ -202,21 +210,21 @@ de9bd09  关联             ← 8 个模型 + 28 个关联
 | GET | `/api/auth/me` | ✅ | 当前登录用户 |
 | POST | `/api/auth/logout` | ✅ | 退出（token 作废） |
 | POST | `/api/auth/refresh` | ✅ | 刷新（旧 token 作废） |
+| GET | `/api/ledgers` | ✅ | 我创建的 + 我加入家庭的账本列表 |
+| GET | `/api/ledgers/{id}` | ✅ | 账本详情（不存在 404 / 非我 403） |
 
 路由中间件：`auth:api`（用 `api` 守卫，即 JWT）。
 
-### 未提交的文件（工作区）
+### 8.1 未提交的文件（工作区，阶段 3 账本接口）
 ```
- M app/Exceptions/Handler.php        （unauthenticated 返回 JSON）
- M app/Http/Middleware/Authenticate.php （redirectTo 返回 null）
- M app/Models/User.php               （JWTSubject）
- M composer.json / composer.lock     （JWT 包）
- M config/auth.php                   （api 守卫）
- M routes/api.php                    （模块化总入口）
-?? app/Http/Controllers/AuthController.php
-?? config/jwt.php
-?? routes/api/
+ M app/Models/Ledger.php               （仅格式调整，关联未变）
+ M routes/api.php                      （新增 require api/ledger.php）
+?? app/Http/Controllers/LedgerController.php （index / show）
+?? routes/api/ledger.php               （GET /ledgers、GET /ledgers/{id}）
 ```
+
+> 阶段 2（JWT）那批文件已在 commit `d6af93c` 入库。
+> 代码要点：`index` 用 `where('owner_id',$user->id)->when(...orWhereIn('family_id',$familyIds))`；`show` 先 `find()` 判 404，再用 `owner_id` / `familyMemberships()` 判 403。
 
 ---
 
@@ -226,8 +234,8 @@ de9bd09  关联             ← 8 个模型 + 28 个关联
 |---|---|---|
 | 1 | 模型 + 关联 + Seeder | ✅ |
 | 2 | JWT 认证 | ✅ |
-| **2.5** | **提交 JWT 那批代码** | 🟡 待做 |
-| 3 | 基础资源 CRUD（ledgers/accounts/categories/成员）+ 归属校验(403) | ⬜ 下一步 |
+| 2.5 | 提交 JWT 那批代码 | ✅ `d6af93c` |
+| **3** | 基础资源 CRUD（ledgers/accounts/categories/成员）+ 归属校验(403) | 🟡 **进行中**：ledgers 的 index/show 已写，剩 store/update/destroy + 其余资源 |
 | 4 | 记账核心（transactions CRUD + 筛选/分页/批量删除/子项/转账/周期） | ⬜ |
 | 5 | 聚合查询接口（dashboard / calendar / analytics） | ⬜ |
 | 6 | 附件与 OCR（上传 + OCR Service 可替换 + 确认入账） | ⬜ |
@@ -274,6 +282,7 @@ de9bd09  关联             ← 8 个模型 + 28 个关联
 | 405 Method Not Allowed | 用 GET 发了 POST 接口 | 改对方法（logout/refresh 是 POST） |
 | curl 发含中文的 JSON 失败 | 字段全变 required | Windows 终端编码问题；**用 `-d @文件.json` 或英文测试** |
 | Model 和 Controller 搞混 | 方法贴错文件 | Model 放关联/属性；含 `$request`/`response()`/`auth()` 的是 Controller |
+| `orWhere` 不加分组 | 多个 or 条件会绕过前面的筛选（权限泄漏） | 用闭包包起来：`->where(fn($q) => $q->where(...)->orWhere(...))` |
 
 ---
 
@@ -338,6 +347,8 @@ grep -E "^DB_" .env
 - 未认证 → 401 JSON；无权限 → 403；验证失败 → 422（Laravel 默认）
 - 密码一律 `Hash::make()`（默认 bcrypt），**绝不存明文**
 - 控制器方法名（login/me/register…）是自定义的，不是框架自带的
+- 资源接口按 `index / show / store / update / destroy` 命名（REST 惯例）
+- **每个涉及资源 id 的方法都要做归属校验**：先 `find()` 判 404（资源不存在），再判 403（存在但无权）。顺序不能反，否则会把"别人的资源是否存在"泄漏出去
 
 **目录分工**
 - Model（`app/Models/`）= 表结构 + 关联
@@ -348,8 +359,9 @@ grep -E "^DB_" .env
 
 ## 14. 收尾杂项（待办）
 
+- [ ] 阶段 3 账本接口剩余部分（store/update/destroy）做完后提交
 - [ ] 前端仓库 `MosaicwithAi`：提交 `.migration-staging/` 的 7 个 ` D`（迁移已归位后端，可删）
-- [ ] 删除无 git 副本 `C:\Users\admin\Desktop\Mosaic\Mosaic-Laravel`
+- [ ] 删除无 git 副本 `C:\Users\admin\Desktop\Mosaic\Mosaic-Laravel`（⚠️ 目前仍存在）
 - [ ] 确认服务器 `.env` 的库名
 - [ ] 公司电脑 `git pull` + `migrate` + `db:seed`
 - [ ] 备份位置记录：模型正确版 `%Temp%\mosaic-model-backup`、JWT 版 `%Temp%\mosaic-jwt-backup`
