@@ -83,14 +83,7 @@ class AccountController extends Controller
         ]);
     }
 
-    /**
-     * 删除账户
-     * DELETE /api/accounts/{id}
-     *
-     * 已被流水引用时拦住（422）：删账户绝不该顺手删掉记账历史。
-     * 数据库层是 ON DELETE SET NULL，这里显式拦是为了给前端一个可读的错误。
-     */
-    public function destroy($id)
+    public function destroy(Request $request, $id)
     {
         $account = auth()->user()->accounts()->find($id);
         if (! $account) {
@@ -101,13 +94,21 @@ class AccountController extends Controller
 
         $usedCount = $account->transactions()->count();
         if ($usedCount > 0) {
-            return response()->json([
-                'code' => 422,
-                'message' => "该账户已被 {$usedCount} 条流水使用，不能删除",
-                'data' => ['transactions' => $usedCount],
-            ], 422);
+            $data = $request->validate([
+                'confirm' => 'nullable|boolean',
+            ]);
+            if (empty($data['confirm'])) {
+                return response()->json([
+                    'code' => 422,
+                    'message' => "该账户已被 {$usedCount} 条流水使用，删除后这些流水的付款方式将显示为已删除，请确认后重试",
+                    'data' => [
+                        'transactions' => $usedCount,
+                    ],
+                ], 422);
+            }
         }
 
+        // ⚠️ 必须放在 if 外面：没被引用的账户也要走到这里，否则会"返回成功但没删"
         $account->delete();
 
         return response()->json([
