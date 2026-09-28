@@ -108,7 +108,6 @@ class AccountController extends Controller
             }
         }
 
-        // ⚠️ 必须放在 if 外面：没被引用的账户也要走到这里，否则会"返回成功但没删"
         $account->delete();
 
         return response()->json([
