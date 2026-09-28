@@ -8,7 +8,7 @@
 ## 0. 一句话概括
 
 AI 生成的家庭记账前端（Vue3，纯静态 mock），配一套 Laravel 9 后端，做毕业设计。
-**当前进度：阶段 1（模型+关联+Seeder）、阶段 2（JWT 认证）已完成并提交；阶段 3（基础资源 CRUD）进行中 —— 账本（ledgers）接口已写完 `index`/`show`，未提交。**
+**当前进度：阶段 1（模型+关联+Seeder）、阶段 2（JWT 认证）已完成并提交；阶段 3（基础资源 CRUD）进行中 —— 账本（ledgers）5 个接口 ✅、账户（accounts）4 个接口 ✅（账户已改为属于个人，见第 5 节）；剩 categories 与家庭成员。**
 
 ---
 
@@ -119,10 +119,10 @@ ab37028  docs: 添加项目记忆文档
 | family_members | user_id | users.id |
 | ledgers | owner_id | users.id |
 | ledgers | family_id | families.id（NULL = 个人账本） |
-| accounts | ledger_id | ledgers.id |
+| accounts | **user_id** | users.id（⚠️ 2026-09 改为属于个人，原为 ledger_id） |
 | categories | ledger_id | ledgers.id |
 | transactions | ledger_id | ledgers.id |
-| transactions | account_id | accounts.id |
+| transactions | account_id | accounts.id（可空，删账户时置 NULL） |
 | transactions | category_id | categories.id |
 | transactions | created_by | users.id |
 | attachments | ledger_id | ledgers.id |
@@ -132,15 +132,18 @@ ab37028  docs: 添加项目记忆文档
 **业务表设计要点：**
 - `transactions` 有 `deleted_at`（软删除）、`source` 枚举 `manual`/`ocr`
 - `categories` 有 `type` 枚举 `income`/`expense`，唯一约束 `(ledger_id, type, name)`
-- `accounts` 唯一约束 `(ledger_id, name)`
+- `accounts` 唯一约束 **`(user_id, name)`**（同一用户下账户名不重复，不同用户可同名）
+- `accounts` 属于**个人**（"我用什么付款"），跨账本复用；`transactions.account_id` 为 `ON DELETE SET NULL`
+- `accounts.opening_balance` 字段保留但**不做余额功能**（不暴露、不计算）
 - `transactions.type` 目前只有 `income`/`expense`，**前端还有"转账"类型，待扩展**
+- `transactions` 模型**尚未加 `$fillable`**（阶段 4 写流水接口时必须先加，否则 MassAssignmentException）
 
-**演示数据（DemoSeeder，可重复执行，用 `firstOrCreate`）：**
+**演示数据（DemoSeeder，可重复执行，用 `firstOrCreate`/`updateOrCreate`）：**
 ```
 4 用户（林知栖/陈先生/林小满/苏外婆，密码统一 password）
 1 家庭（林氏一家）
 3 账本（家庭账本 / 个人私密账本 / 海岛游专项基金）
-7 账户、13 分类、14 流水、1 附件
+7 账户（属于林知栖个人）、13 分类、14 流水、1 附件
 ```
 
 ---
@@ -211,20 +214,29 @@ ab37028  docs: 添加项目记忆文档
 | POST | `/api/auth/logout` | ✅ | 退出（token 作废） |
 | POST | `/api/auth/refresh` | ✅ | 刷新（旧 token 作废） |
 | GET | `/api/ledgers` | ✅ | 我创建的 + 我加入家庭的账本列表 |
+| POST | `/api/ledgers` | ✅ | 创建账本（家庭成员才能建家庭账本，否则 403） |
 | GET | `/api/ledgers/{id}` | ✅ | 账本详情（不存在 404 / 非我 403） |
+| PUT | `/api/ledgers/{id}` | ✅ | 改账本（仅所有者；`sometimes` 局部更新） |
+| DELETE | `/api/ledgers/{id}` | ✅ | 删账本（仅所有者 + `confirm:true` 二次确认；事务级联删流水/分类/附件，**不动账户**） |
+| GET | `/api/accounts` | ✅ | 我的支付账户（属于个人，非账本） |
+| POST | `/api/accounts` | ✅ | 新增账户（同一用户下重名 422） |
+| PUT | `/api/accounts/{id}` | ✅ | 改账户（`Rule::unique` + `ignore`） |
+| DELETE | `/api/accounts/{id}` | ✅ | 删账户（被流水引用 → 422，保住记账历史） |
 
 路由中间件：`auth:api`（用 `api` 守卫，即 JWT）。
 
-### 8.1 未提交的文件（工作区，阶段 3 账本接口）
+### 8.1 已完成并提交（阶段 3 前半）
 ```
- M app/Models/Ledger.php               （仅格式调整，关联未变）
- M routes/api.php                      （新增 require api/ledger.php）
-?? app/Http/Controllers/LedgerController.php （index / show）
-?? routes/api/ledger.php               （GET /ledgers、GET /ledgers/{id}）
+3c0ec35  ledger接口：index/show + 归属校验
+ec81a15  ledger接口：update/destroy（事务级联删除）
+a6d0a5b  ledger删除加二次确认（confirm + 关联数量）
+05b5c2b  账户改为属于个人（设置）：/api/accounts + 迁移 + 模型调整
 ```
 
 > 阶段 2（JWT）那批文件已在 commit `d6af93c` 入库。
-> 代码要点：`index` 用 `where('owner_id',$user->id)->when(...orWhereIn('family_id',$familyIds))`；`show` 先 `find()` 判 404，再用 `owner_id` / `familyMemberships()` 判 403。
+> 代码要点：账本 `index` 用 `where('owner_id',$user->id)->when(...orWhereIn('family_id',$familyIds))`；`show` 先 `find()` 判 404，再用 `owner_id` / `familyMemberships()` 判 403。
+> 账户接口要点：`auth()->user()->accounts()->find($id)` 天然只能找到自己的账户（越权 id → 404）；`transactions.account_id` 为 `ON DELETE SET NULL`，删账户不毁记账历史。
+> 尚未完成：`categories` CRUD、家庭成员管理。
 
 ---
 
@@ -235,7 +247,7 @@ ab37028  docs: 添加项目记忆文档
 | 1 | 模型 + 关联 + Seeder | ✅ |
 | 2 | JWT 认证 | ✅ |
 | 2.5 | 提交 JWT 那批代码 | ✅ `d6af93c` |
-| **3** | 基础资源 CRUD（ledgers/accounts/categories/成员）+ 归属校验(403) | 🟡 **进行中**：ledgers 的 index/show 已写，剩 store/update/destroy + 其余资源 |
+| **3** | 基础资源 CRUD（ledgers/accounts/categories/成员）+ 归属校验(403) | 🟡 **进行中**：ledgers ✅、accounts ✅（已改为属于个人）；剩 categories、家庭成员 |
 | 4 | 记账核心（transactions CRUD + 筛选/分页/批量删除/子项/转账/周期） | ⬜ |
 | 5 | 聚合查询接口（dashboard / calendar / analytics） | ⬜ |
 | 6 | 附件与 OCR（上传 + OCR Service 可替换 + 确认入账） | ⬜ |
