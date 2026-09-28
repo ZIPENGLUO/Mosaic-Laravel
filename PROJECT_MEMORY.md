@@ -94,6 +94,8 @@ a6d0a5b  ledger删除加二次确认（confirm + 关联数量）
 3389674  docs: 记录账户改为属于个人 + 阶段3进度
 66bf40d  docs: 增加项目记忆维护约定
 a7783fd  style: AccountController 数组对齐整理
+c142345  docs: 补齐项目记忆（阶段3已完成项/关键决策/踩坑/编码约定/迁移数）
+1ae69b5  账户删除改为二次确认（决策B）：被流水引用时需 confirm:true
 ```
 > 约定：**代码一个 commit、文档更新单独一个 `docs:` commit**（见开头「维护约定」）。
 
@@ -229,7 +231,7 @@ a7783fd  style: AccountController 数组对齐整理
     - `store`：创建；带 `family_id` 时校验是不是该家庭成员（否则 403）；`owner_id` 由后端填
     - `update`：仅所有者；`sometimes` 规则支持局部更新；`$ledger->update($data)`
     - `destroy`：仅所有者 + **`confirm:true` 二次确认**（未确认返回 422 并附关联数量）；`DB::transaction` 级联删除
-15. **账户接口 4 个**（`AccountController`）：`/api/accounts` 不嵌套 —— 账户属于个人（见第 10 节决策）
+15. **账户接口 4 个**（`AccountController`）：`/api/accounts` 不嵌套 —— 账户属于个人（见第 10 节决策）。`destroy` 用**决策 B**：被流水引用时需 `confirm:true`
 16. **路由模块化扩展**：新增 `routes/api/ledger.php`、`routes/api/account.php`，`routes/api.php` 里 require
 17. **账户归属重构**：迁移 `..._000008`，`accounts.user_id` 取代 `ledger_id`；`transactions.account_id` 改可空 + `ON DELETE SET NULL`
 18. 待做：**categories CRUD**、**家庭成员管理**
@@ -259,7 +261,7 @@ a7783fd  style: AccountController 数组对齐整理
 | GET | `/api/accounts` | ✅ | 我的支付账户（属于个人，非账本） |
 | POST | `/api/accounts` | ✅ | 新增账户（同一用户下重名 422） |
 | PUT | `/api/accounts/{id}` | ✅ | 改账户（`Rule::unique` + `ignore`） |
-| DELETE | `/api/accounts/{id}` | ✅ | 删账户（被流水引用 → 422，保住记账历史） |
+| DELETE | `/api/accounts/{id}` | ✅ | 删账户（**决策 B**：被流水引用时需 `confirm:true`，否则 422 + 引用数量；未被引用可直接删） |
 
 路由中间件：`auth:api`（用 `api` 守卫，即 JWT）。
 
@@ -314,7 +316,8 @@ a6d0a5b  ledger删除加二次确认（confirm + 关联数量）
 | **前端用环境变量切 baseURL** | 开发连本地、演示连服务器，一次配置两处切换（尚未实施） |
 | **账户属于个人，不属于账本**（2026-09 改动） | 账户 = "我用什么付款"，是设置里的东西；放账户下会引出"家庭账本要展示谁的银行卡余额"的隐私难题。改为 `accounts.user_id`，跨账本复用；"谁花的钱"由 `transactions.created_by` 负责 |
 | **不做账户余额功能** | 个人账户模型下"余额算哪个账本的"无法自洽；`opening_balance` 字段保留但接口不暴露、前端不显示 |
-| **删账户不毁记账历史** | `transactions.account_id` 改 `ON DELETE SET NULL`（付款方式已删除，流水保留）；接口层仍用 422 拦住"被引用的账户"，避免用户误操作 |
+| **删账户不毁记账历史** | `transactions.account_id` 改 `ON DELETE SET NULL`（付款方式已删除，流水保留） |
+| **被引用的账户"二次确认后可删"**（决策 B，2026-09 用户决定） | 422 拦住默认删除并回报引用数量；带 `confirm:true` 则真删，关联流水 `account_id` 置 NULL。权衡：允许用户清理不用的支付方式（如已注销的卡），代价是历史流水的付款方式丢失 → **前端必须把 NULL 显示为"已删除"**。（备选方案 A"永不允许删"因体验僵化被否） |
 | **账本删除不级联删账户** | 账户是别人的东西，删账本凭什么删我的微信；事务里只删流水/分类/附件 |
 | **教学方式：用户手写代码，我讲解+验证** | 用户明确要求"不要直接帮我写完"，涉及写代码先问 |
 
@@ -346,6 +349,9 @@ a6d0a5b  ledger删除加二次确认（confirm + 关联数量）
 | **PHP 里用 `=` 当比较**（测试脚本） | 误用他人 token 跑了删除用例，真删了数据 | 比较用 `==`/`-eq`；测试脚本也要 review，破坏性用例先备份/可重跑种子 |
 | **删用户前没处理他的账户** | `Cannot delete or update a parent row`（1451） | `accounts.user_id` 是 `ON DELETE RESTRICT`；删用户要先删/转他的账户 |
 | **`php artisan tinker` 报 PsySH 写历史失败** | `Writing to .../psysh_history is not allowed` | 沙箱环境下 tinker 用不了；改用它 `DB::select` 的独立 PHP 脚本或直接 PDO 查数据 |
+| **`if` 块"吞掉"了后续语句**（最隐蔽） | 缩进把 `$account->delete()` 放进了 `if ($usedCount > 0) {}` 里 → 未被引用的账户**删不掉，接口却返回 200 成功** | 结构约定：`if` 只负责"拦"（return 错误），**正文动作放在 `if` 外面**。这类 bug 不报错、返回成功、数据没变，**必须靠"删完再查一次"的测试才能发现** |
+| 接口返回成功 ≠ 数据真的变了 | 同上 | 测试用例要带"**操作后再查询确认**"这一步，不能只看 HTTP 200 |
+| 测试脚本自身的判断条件写错 | 用"名字包含 Probe"判断是否删除，匹配到了上一轮的残留记录，误报"没删掉" | 断言要针对**精确的 id**，不要用模糊匹配；测试前后都查一次库 |
 
 ---
 
@@ -415,6 +421,8 @@ grep -E "^DB_" .env
 - **更省事的写法：用关联查找子资源** —— `auth()->user()->accounts()->find($id)`，越权 id 天然 404，不用另写归属判断
 - **可见权限 ≠ 可写权限**：`show` 允许家庭成员看（`$isMine || $isFamily`），`update/destroy` 只允许所有者（`$ledger->owner_id !== $user->id`）。这两套规则要分开，不能共用一个校验
 - **破坏性接口加二次确认**：`confirm` 字段 + 未确认时返回 422 并附"会删掉多少"的统计（如 `{'transactions':14}`），供前端做确认弹窗
+- **`if` 只负责"拦"，正文动作放 `if` 外**：`if (有条件) { 校验并 return 错误 }` 之后才是 `$model->delete()`。若把删除写进 `if` 内，未被引用的资源会"返回成功但没删"（不报错，极难发现）
+- **测试要"操作后回查"**：HTTP 200 不代表数据变了；破坏性操作的用例必须再查一次库/接口确认结果
 - **失败顺序**：404（不存在）→ 403（无权）→ 422（业务规则/确认）→ 成功
 - 模型的 `$fillable` 只放允许批量赋值的列；**归属字段（`owner_id`/`user_id`）由后端填，绝不接受客户端传入**
 
@@ -433,6 +441,8 @@ grep -E "^DB_" .env
 ## 14. 收尾杂项（待办）
 
 - [ ] **前端需要一个"账户管理"入口**（账户已属于个人/设置）；新账本可考虑自动带默认账户（现金/微信/支付宝）或前端提供"推荐账户"
+- [ ] **前端：流水的付款方式为 NULL 时显示"已删除"**（决策 B 的配套要求：账户被删后，历史流水的 `account_id` 为 NULL，不能显示空白）
+- [ ] 可选增强：账户"停用"（`is_active` 字段，列表不显示但历史照旧）—— 比直接删除更温和的替代方案
 - [ ] 前端仓库 `MosaicwithAi`：提交 `.migration-staging/` 的 7 个 ` D`（迁移已归位后端，可删）
 - [ ] 删除无 git 副本 `C:\Users\admin\Desktop\Mosaic\Mosaic-Laravel`（⚠️ 目前仍存在）
 - [ ] 确认服务器 `.env` 的库名
