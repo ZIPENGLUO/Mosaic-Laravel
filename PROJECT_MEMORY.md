@@ -1,6 +1,6 @@
 # Mosaic 家庭财务系统 — 项目记忆
 
-> 最后更新：阶段 3（基础资源 CRUD）账本接口进行中
+> 最后更新：阶段 3 进行中 —— ledgers ✅ / accounts ✅（账户已改为属于个人），剩 categories 与家庭成员
 > 用途：记录项目全貌、进度、决策与待办，供后续开发/答辩参考
 
 ---
@@ -84,10 +84,18 @@ AI 生成的家庭记账前端（Vue3，纯静态 mock），配一套 Laravel 9 
 260dcce  basedata         ← 7 张业务迁移
 de9bd09  关联             ← 8 个模型 + 28 个关联
 6d392a4  表关联seeder     ← DemoSeeder
-d6af93c  jwtauth         ← JWT 认证（阶段 2，已提交）
+d6af93c  jwtauth          ← JWT 认证（阶段 2）
 ab37028  docs: 添加项目记忆文档
-（阶段 3 的 ledger 代码尚未提交，见第 8.1 节）
+3c0ec35  ledger接口：index/show + 归属校验
+d216536  docs: 更新项目记忆到阶段 3
+ec81a15  ledger接口：update/destroy（事务级联删除）
+a6d0a5b  ledger删除加二次确认（confirm + 关联数量）
+05b5c2b  账户改为属于个人（设置）：/api/accounts + 迁移 + 模型调整
+3389674  docs: 记录账户改为属于个人 + 阶段3进度
+66bf40d  docs: 增加项目记忆维护约定
+a7783fd  style: AccountController 数组对齐整理
 ```
+> 约定：**代码一个 commit、文档更新单独一个 `docs:` commit**（见开头「维护约定」）。
 
 ---
 
@@ -114,16 +122,18 @@ ab37028  docs: 添加项目记忆文档
 
 ## 5. 数据库现状
 
-**三处表结构已对齐（11 个迁移 / 12 张表），本地和服务器都已灌演示数据**
+**表结构状态（12 个迁移 / 13 张表）**
 
 | 环境 | 数据库 | 迁移 | 数据 | 状态 |
 |---|---|---|---|---|
-| 自己电脑 | 本地 MySQL，库 `laravel`，账号 `root` | 11 | ✅ | ✅ |
-| 阿里云服务器 | 服务器 MySQL，账号 `myapp_user` | 11 | ✅ | ✅ |
-| GitHub 仓库 | — | 11 个文件 | — | ✅ |
+| 自己电脑 | 本地 MySQL，库 `laravel`，账号 `root` | **12** | ✅ | ✅ 最新（含账户归属重构） |
+| 阿里云服务器 | 服务器 MySQL，账号 `myapp_user` | 11 | ✅ | ⏸ 落后一个迁移（按"暂不更新"决策，等统一部署） |
+| GitHub 仓库 | — | **12 个文件** | — | ✅ |
 | 公司电脑 | 本地 MySQL，账号 `root` | 4 | ⬜ | 需 `git pull` + `migrate` + `db:seed` |
 
-**12 张表：**
+> ⚠️ 本次新增迁移 `2026_09_10_000008_migrate_accounts_to_user_ownership`（账户改为属于个人）。**任何环境拉取代码后都必须跑 `php artisan migrate`**，否则 `accounts` 表结构与代码不匹配。
+
+**13 张表：**
 
 ```
 默认表：users, password_resets, failed_jobs, personal_access_tokens, migrations
@@ -213,12 +223,20 @@ ab37028  docs: 添加项目记忆文档
 13. **已提交**：commit `d6af93c jwtauth`（JWT 那批代码已入库，不再是工作区未提交状态）
 
 ### 阶段 3：基础资源 CRUD（🟡 进行中）
-14. **账本接口**：`LedgerController` 的 `index`（返回"我创建的 + 我家庭的"账本）、`show`（先 404 再 403 归属校验）
-15. **路由模块化扩展**：新增 `routes/api/ledger.php`，`routes/api.php` 里 require
-16. 待做：账本的 store/update/destroy，以及 accounts / categories / 家庭成员
+14. **账本接口 5 个**（`LedgerController`）：
+    - `index`：返回"我创建的 + 我家庭的"账本
+    - `show`：先 `find()` 判 404，再判归属 403（所有者或家庭成员可看）
+    - `store`：创建；带 `family_id` 时校验是不是该家庭成员（否则 403）；`owner_id` 由后端填
+    - `update`：仅所有者；`sometimes` 规则支持局部更新；`$ledger->update($data)`
+    - `destroy`：仅所有者 + **`confirm:true` 二次确认**（未确认返回 422 并附关联数量）；`DB::transaction` 级联删除
+15. **账户接口 4 个**（`AccountController`）：`/api/accounts` 不嵌套 —— 账户属于个人（见第 10 节决策）
+16. **路由模块化扩展**：新增 `routes/api/ledger.php`、`routes/api/account.php`，`routes/api.php` 里 require
+17. **账户归属重构**：迁移 `..._000008`，`accounts.user_id` 取代 `ledger_id`；`transactions.account_id` 改可空 + `ON DELETE SET NULL`
+18. 待做：**categories CRUD**、**家庭成员管理**
 
-### 教学成果（用户是 Laravel 初学者）
-- 理解模型↔表映射、belongsTo/hasMany、N+1 与 `with()`、JWT 流程、401 vs 403、Model vs Controller 分工
+### 教学/技术成果（用户是 Laravel 初学者）
+- 已理解：模型↔表映射、belongsTo/hasMany、N+1 与 `with()`、JWT 流程、401 vs 403、Model vs Controller 分工
+- 阶段 3 新增：`$request->validate()` 与 whitelist、`Rule::unique->where()->ignore()`、`sometimes` 局部更新、`in:` 枚举校验、`exists:` 关联校验、`DB::transaction` 事务与级联删除、软删除 vs 数据库外键、二次确认（`confirm`）、私有辅助方法与"用关联查找子资源"（`$user->accounts()->find($id)` 天然隔离越权）
 
 ---
 
@@ -294,6 +312,10 @@ a6d0a5b  ledger删除加二次确认（confirm + 关联数量）
 | **服务器暂不更新** | 后端还在长，频繁部署拖慢开发；等接口做得差不多再一次性部署 |
 | **不做"资产概览"功能** | 难度高一个量级（数据建模+定时任务+AI 集成），时间不划算；只写进论文"未来展望" |
 | **前端用环境变量切 baseURL** | 开发连本地、演示连服务器，一次配置两处切换（尚未实施） |
+| **账户属于个人，不属于账本**（2026-09 改动） | 账户 = "我用什么付款"，是设置里的东西；放账户下会引出"家庭账本要展示谁的银行卡余额"的隐私难题。改为 `accounts.user_id`，跨账本复用；"谁花的钱"由 `transactions.created_by` 负责 |
+| **不做账户余额功能** | 个人账户模型下"余额算哪个账本的"无法自洽；`opening_balance` 字段保留但接口不暴露、前端不显示 |
+| **删账户不毁记账历史** | `transactions.account_id` 改 `ON DELETE SET NULL`（付款方式已删除，流水保留）；接口层仍用 422 拦住"被引用的账户"，避免用户误操作 |
+| **账本删除不级联删账户** | 账户是别人的东西，删账本凭什么删我的微信；事务里只删流水/分类/附件 |
 | **教学方式：用户手写代码，我讲解+验证** | 用户明确要求"不要直接帮我写完"，涉及写代码先问 |
 
 ---
@@ -315,6 +337,15 @@ a6d0a5b  ledger删除加二次确认（confirm + 关联数量）
 | curl 发含中文的 JSON 失败 | 字段全变 required | Windows 终端编码问题；**用 `-d @文件.json` 或英文测试** |
 | Model 和 Controller 搞混 | 方法贴错文件 | Model 放关联/属性；含 `$request`/`response()`/`auth()` 的是 Controller |
 | `orWhere` 不加分组 | 多个 or 条件会绕过前面的筛选（权限泄漏） | 用闭包包起来：`->where(fn($q) => $q->where(...)->orWhere(...))` |
+| **`MassAssignmentException: Add [x] to fillable`** | `create()` 报 500 | 模型加 `protected $fillable = [...]`；**每个新模型都要加**（`Ledger` `Account` 都踩过；`Transaction` 还没加，阶段 4 必踩） |
+| **MySQL errno 1553** | 迁移里 `dropUnique` 报 "Cannot drop index: needed in a foreign key constraint" | 外键依赖索引，必须**先 `dropForeign` 再 `dropUnique`**（`..._000008` 迁移里有注释） |
+| **`response()->json()` 状态码写成数组元素** | 返回 HTTP 200 但 body 里 `code:404`，还多出 `"0":404` | 状态码是 `json()` 的**第二个参数**：`response()->json([...], 404)` |
+| **`Ledger::update($data)` 静态调用** | `Non-static method ... cannot be called statically` | 新建用 `Model::create()`（静态），修改用 `$model->update()`（实例） |
+| **变量先用后定义** | `Undefined variable $ledger` / `$id` | PHP 逐行执行；`find($id)` 必须在用到 `$ledger` 之前；方法要用路由参数就得在签名里写 `$id` |
+| **二次确认放在授权之前** | 非本人请求也返回 422 + 关联数量 → **泄漏"账本存在、有多少数据"** | 顺序：find → 404 → 归属 403 → confirm 422 → 事务删除 |
+| **PHP 里用 `=` 当比较**（测试脚本） | 误用他人 token 跑了删除用例，真删了数据 | 比较用 `==`/`-eq`；测试脚本也要 review，破坏性用例先备份/可重跑种子 |
+| **删用户前没处理他的账户** | `Cannot delete or update a parent row`（1451） | `accounts.user_id` 是 `ON DELETE RESTRICT`；删用户要先删/转他的账户 |
+| **`php artisan tinker` 报 PsySH 写历史失败** | `Writing to .../psysh_history is not allowed` | 沙箱环境下 tinker 用不了；改用它 `DB::select` 的独立 PHP 脚本或直接 PDO 查数据 |
 
 ---
 
@@ -381,6 +412,16 @@ grep -E "^DB_" .env
 - 控制器方法名（login/me/register…）是自定义的，不是框架自带的
 - 资源接口按 `index / show / store / update / destroy` 命名（REST 惯例）
 - **每个涉及资源 id 的方法都要做归属校验**：先 `find()` 判 404（资源不存在），再判 403（存在但无权）。顺序不能反，否则会把"别人的资源是否存在"泄漏出去
+- **更省事的写法：用关联查找子资源** —— `auth()->user()->accounts()->find($id)`，越权 id 天然 404，不用另写归属判断
+- **可见权限 ≠ 可写权限**：`show` 允许家庭成员看（`$isMine || $isFamily`），`update/destroy` 只允许所有者（`$ledger->owner_id !== $user->id`）。这两套规则要分开，不能共用一个校验
+- **破坏性接口加二次确认**：`confirm` 字段 + 未确认时返回 422 并附"会删掉多少"的统计（如 `{'transactions':14}`），供前端做确认弹窗
+- **失败顺序**：404（不存在）→ 403（无权）→ 422（业务规则/确认）→ 成功
+- 模型的 `$fillable` 只放允许批量赋值的列；**归属字段（`owner_id`/`user_id`）由后端填，绝不接受客户端传入**
+
+**迁移（本项目 MySQL 特性）**
+- 不用 `doctrine/dbal`：改列类型/加外键用 `DB::statement('ALTER TABLE ...')`
+- **删外键列的顺序**：先 `dropForeign`，再 `dropUnique`，最后 `DROP COLUMN`（反过来会报 errno 1553）
+- `restrictOnDelete` = 有子数据时禁止删父行（应用层要先检查并给 422），`nullOnDelete`/`cascadeOnDelete` 按语义选
 
 **目录分工**
 - Model（`app/Models/`）= 表结构 + 关联
@@ -391,9 +432,9 @@ grep -E "^DB_" .env
 
 ## 14. 收尾杂项（待办）
 
-- [ ] 阶段 3 账本接口剩余部分（store/update/destroy）做完后提交
+- [ ] **前端需要一个"账户管理"入口**（账户已属于个人/设置）；新账本可考虑自动带默认账户（现金/微信/支付宝）或前端提供"推荐账户"
 - [ ] 前端仓库 `MosaicwithAi`：提交 `.migration-staging/` 的 7 个 ` D`（迁移已归位后端，可删）
 - [ ] 删除无 git 副本 `C:\Users\admin\Desktop\Mosaic\Mosaic-Laravel`（⚠️ 目前仍存在）
 - [ ] 确认服务器 `.env` 的库名
-- [ ] 公司电脑 `git pull` + `migrate` + `db:seed`
+- [ ] 公司电脑 `git pull` + `migrate` + `db:seed`（注意：本次有**新迁移**，必须跑 `php artisan migrate`）
 - [ ] 备份位置记录：模型正确版 `%Temp%\mosaic-model-backup`、JWT 版 `%Temp%\mosaic-jwt-backup`
