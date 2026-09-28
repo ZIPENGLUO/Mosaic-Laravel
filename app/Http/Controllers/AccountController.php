@@ -6,14 +6,6 @@ use App\Models\Account;
 use Illuminate\Http\Request;
 use Illuminate\Validation\Rule;
 
-/**
- * 支付账户管理（个人设置里的"我用什么付款"）。
- *
- * 账户属于用户，不属于账本：一份账户列表可以在多个账本里复用。
- * 路由：/api/accounts（非嵌套，因为它和账本没有归属关系）。
- *
- * 注意：不做余额功能 —— opening_balance 字段保留在表里但不对外暴露。
- */
 class AccountController extends Controller
 {
     /**
@@ -51,8 +43,8 @@ class AccountController extends Controller
 
         $account = Account::create([
             'user_id' => $user->id,          // 归属由后端决定，不信客户端
-            'name'    => $data['name'],
-            'type'    => $data['type'] ?? 'cash',
+            'name' => $data['name'],
+            'type' => $data['type'] ?? 'cash',
         ]);
 
         return response()->json([
