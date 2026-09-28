@@ -9,6 +9,8 @@ class Ledger extends Model
 {
     use HasFactory;
 
+    protected $fillable = ['name', 'currency', 'family_id', 'owner_id'];
+
     /** 账本所有者：ledgers.owner_id → users.id */
     public function owner()
     {
@@ -44,5 +46,4 @@ class Ledger extends Model
     {
         return $this->hasMany(Attachment::class);
     }
-
 }

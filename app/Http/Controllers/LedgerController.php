@@ -3,6 +3,8 @@
 namespace App\Http\Controllers;
 
 use App\Models\Ledger;  // ← 引入 Ledger 模型
+use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 
 class LedgerController extends Controller
 {
@@ -47,5 +49,90 @@ class LedgerController extends Controller
         }
 
         return response()->json(['code' => 200, 'message' => 'success', 'data' => $ledger]);
+    }
+
+    public function store(Request $request)
+    {
+        $data = $request->validate([
+            'name' => 'required|string|max:100',
+            'currency' => 'nullable|string|size:3',
+            'family_id' => 'nullable|integer|exists:families,id',
+        ]);
+        $user = auth()->user();
+
+        if (! empty($data['family_id'])) {
+            $isMember = $user->familyMemberships()->where('family_id', $data['family_id'])->exists();
+            if (! $isMember) {
+                return response()->json([
+                    'code' => 403, 'message' => '你不是该家庭成员，无权创建账本', 'data' => null,
+                ], 403);
+            }
+        }
+        $ledger = Ledger::create([
+            'name' => $data['name'],
+            'currency' => $data['currency'] ?? 'CNY',
+            'family_id' => $data['family_id'] ?? null,
+            'owner_id' => $user->id,
+        ]);
+
+        // ④ 返回
+        return response()->json([
+            'code' => 200, 'message' => '账本创建成功', 'data' => $ledger,
+        ]);
+    }
+
+    public function update(Request $request, $id)
+    {
+        $user = auth()->user();
+        $ledger = Ledger::find($id);
+        if (! $ledger) {
+            return response()->json([
+                'code' => 404, 'message' => '没有对应账本',
+            ], 404);
+        }
+        if ($ledger->owner_id !== $user->id) {
+            return response()->json([
+                'code' => 403, 'message' => '没有权限',
+            ], 403);
+        }
+
+        $data = $request->validate([
+            'name' => 'sometimes', 'string', 'max:100',
+            'currency' => 'sometimes|string|size:3',
+            'family_id' => 'sometimes|integer|exists:families,id',
+        ]);
+
+        $ledger->update($data);
+
+        return response()->json([
+            'code' => 200, 'message' => '账本修改成功', 'data' => $ledger,
+        ]);
+    }
+
+    public function destroy($id)
+    {
+        $user = auth()->user();
+        $ledger = Ledger::find($id);
+        if (! $ledger) {
+            return response()->json([
+                'code' => 404, 'message' => '没有对应账本',
+            ], 404);
+        }
+        if ($ledger->owner_id !== $user->id) {
+            return response()->json([
+                'code' => 403, 'message' => '没有权限',
+            ], 403);
+        }
+        DB::transaction(function () use ($ledger) {
+            $ledger->attachments()->delete();          // 真删
+            $ledger->transactions()->forceDelete();    //  软删模型必须 forceDelete
+            $ledger->accounts()->delete();
+            $ledger->categories()->delete();
+            $ledger->delete();                         // 最后才删账本自己
+        });
+
+        return response()->json([
+            'code' => 200, 'message' => '账本已删除',
+        ]);
     }
 }
