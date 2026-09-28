@@ -109,7 +109,7 @@ class LedgerController extends Controller
         ]);
     }
 
-    public function destroy($id)
+    public function destroy(Request $request, $id)
     {
         $user = auth()->user();
         $ledger = Ledger::find($id);
@@ -123,6 +123,24 @@ class LedgerController extends Controller
                 'code' => 403, 'message' => '没有权限',
             ], 403);
         }
+
+        // 二次确认：放在授权之后，避免把"账本存在、里面有多少数据"泄漏给非本人
+        $data = $request->validate([
+            'confirm' => 'nullable|boolean',
+        ]);
+        if (empty($data['confirm'])) {
+            return response()->json([
+                'code' => 422,
+                'message' => '删除不可恢复，请确认后重试',
+                'data' => [
+                    'transactions' => $ledger->transactions()->count(),
+                    'accounts' => $ledger->accounts()->count(),
+                    'categories' => $ledger->categories()->count(),
+                    'attachments' => $ledger->attachments()->count(),
+                ],
+            ], 422);
+        }
+
         DB::transaction(function () use ($ledger) {
             $ledger->attachments()->delete();          // 真删
             $ledger->transactions()->forceDelete();    //  软删模型必须 forceDelete
