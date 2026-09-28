@@ -69,6 +69,12 @@ class User extends Authenticatable implements JWTSubject
         return $this->hasMany(Ledger::class, 'owner_id');
     }
 
+    /** 我的支付账户：accounts.user_id → users.id（属于个人设置，跨账本复用） */
+    public function accounts()
+    {
+        return $this->hasMany(Account::class);
+    }
+
     /** 我记录的流水：transactions.created_by → users.id */
     public function transactions()
     {

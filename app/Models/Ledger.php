@@ -23,12 +23,6 @@ class Ledger extends Model
         return $this->belongsTo(Family::class);
     }
 
-    /** 账户：accounts.ledger_id → ledgers.id */
-    public function accounts()
-    {
-        return $this->hasMany(Account::class);
-    }
-
     /** 分类：categories.ledger_id → ledgers.id */
     public function categories()
     {

@@ -62,7 +62,7 @@ class DemoSeeder extends Seeder
             ['owner_id' => $users['lin']->id, 'family_id' => $family->id, 'currency' => 'CNY']
         );
 
-        // ========== 4. 账户（家庭账本） ==========
+        // ========== 4. 账户（属于个人：林知栖的支付方式，跨账本复用） ==========
         $accounts = [];
         foreach ([
             '现金'           => 'cash',
@@ -73,8 +73,8 @@ class DemoSeeder extends Seeder
             '建设银行信用卡' => 'credit_card',
             '医保账户'       => 'medical',
         ] as $name => $type) {
-            $accounts[$name] = Account::firstOrCreate(
-                ['ledger_id' => $familyLedger->id, 'name' => $name],
+            $accounts[$name] = Account::updateOrCreate(
+                ['user_id' => $users['lin']->id, 'name' => $name],
                 ['type' => $type, 'opening_balance' => 0]
             );
         }
@@ -166,7 +166,7 @@ class DemoSeeder extends Seeder
         $this->command->info("  用户      : " . User::count());
         $this->command->info("  家庭      : " . Family::count());
         $this->command->info("  家庭账本  : {$familyLedger->name}");
-        $this->command->info("  账户      : " . Account::where('ledger_id', $familyLedger->id)->count());
+        $this->command->info("  账户      : " . count($accounts) . "（属于 " . $users['lin']->name . "）");
         $this->command->info("  分类      : " . Category::where('ledger_id', $familyLedger->id)->count());
         $this->command->info("  流水      : " . Transaction::where('ledger_id', $familyLedger->id)->count());
         $this->command->info("  附件      : " . Attachment::count());
