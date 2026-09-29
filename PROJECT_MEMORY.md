@@ -1,6 +1,6 @@
 # Mosaic 家庭财务系统 — 项目记忆
 
-> 最后更新：阶段 3 进行中 —— ledgers ✅ / accounts ✅（账户已改为属于个人），剩 categories 与家庭成员
+> 最后更新：阶段 3 进行中 —— ledgers ✅ / accounts ✅ / categories ✅，剩家庭成员管理
 > 用途：记录项目全貌、进度、决策与待办，供后续开发/答辩参考
 
 ---
@@ -28,7 +28,7 @@
 ## 0. 一句话概括
 
 AI 生成的家庭记账前端（Vue3，纯静态 mock），配一套 Laravel 9 后端，做毕业设计。
-**当前进度：阶段 1（模型+关联+Seeder）、阶段 2（JWT 认证）已完成并提交；阶段 3（基础资源 CRUD）进行中 —— 账本（ledgers）5 个接口 ✅、账户（accounts）4 个接口 ✅（账户已改为属于个人，见第 5 节）；剩 categories 与家庭成员。**
+**当前进度：阶段 1（模型+关联+Seeder）、阶段 2（JWT 认证）已完成并提交；阶段 3（基础资源 CRUD）进行中 —— 账本（ledgers）5 个接口 ✅、账户（accounts）4 个接口 ✅（账户已改为属于个人）、分类（categories）4 个接口 ✅（属于账本）；剩家庭成员管理。**
 
 ---
 
@@ -96,6 +96,7 @@ a6d0a5b  ledger删除加二次确认（confirm + 关联数量）
 a7783fd  style: AccountController 数组对齐整理
 c142345  docs: 补齐项目记忆（阶段3已完成项/关键决策/踩坑/编码约定/迁移数）
 1ae69b5  账户删除改为二次确认（决策B）：被流水引用时需 confirm:true
+7ea0e8c  categories接口：/api/ledgers/{id}/categories + 决策B删除（nullOnDelete）
 ```
 > 约定：**代码一个 commit、文档更新单独一个 `docs:` commit**（见开头「维护约定」）。
 
@@ -124,16 +125,18 @@ c142345  docs: 补齐项目记忆（阶段3已完成项/关键决策/踩坑/编�
 
 ## 5. 数据库现状
 
-**表结构状态（12 个迁移 / 13 张表）**
+**表结构状态（13 个迁移 / 13 张表）**
 
 | 环境 | 数据库 | 迁移 | 数据 | 状态 |
 |---|---|---|---|---|
-| 自己电脑 | 本地 MySQL，库 `laravel`，账号 `root` | **12** | ✅ | ✅ 最新（含账户归属重构） |
-| 阿里云服务器 | 服务器 MySQL，账号 `myapp_user` | 11 | ✅ | ⏸ 落后一个迁移（按"暂不更新"决策，等统一部署） |
-| GitHub 仓库 | — | **12 个文件** | — | ✅ |
+| 自己电脑 | 本地 MySQL，库 `laravel`，账号 `root` | **13** | ✅ | ✅ 最新（含账户归属 + 分类删除策略重构） |
+| 阿里云服务器 | 服务器 MySQL，账号 `myapp_user` | 11 | ✅ | ⏸ 落后两个迁移（按"暂不更新"决策，等统一部署） |
+| GitHub 仓库 | — | **13 个文件** | — | ✅ |
 | 公司电脑 | 本地 MySQL，账号 `root` | 4 | ⬜ | 需 `git pull` + `migrate` + `db:seed` |
 
-> ⚠️ 本次新增迁移 `2026_09_10_000008_migrate_accounts_to_user_ownership`（账户改为属于个人）。**任何环境拉取代码后都必须跑 `php artisan migrate`**，否则 `accounts` 表结构与代码不匹配。
+> ⚠️ 两次待补迁移（**任何环境拉取代码后都必须跑 `php artisan migrate`**，否则表结构与代码不匹配）：
+> - `2026_09_10_000008_migrate_accounts_to_user_ownership`（账户改为属于个人）
+> - `2026_09_10_000009_migrate_transactions_category_id_to_null_on_delete`（删分类时流水置 NULL）
 
 **13 张表：**
 
@@ -155,7 +158,7 @@ c142345  docs: 补齐项目记忆（阶段3已完成项/关键决策/踩坑/编�
 | categories | ledger_id | ledgers.id |
 | transactions | ledger_id | ledgers.id |
 | transactions | account_id | accounts.id（可空，删账户时置 NULL） |
-| transactions | category_id | categories.id |
+| transactions | category_id | categories.id（可空，删分类时置 NULL） |
 | transactions | created_by | users.id |
 | attachments | ledger_id | ledgers.id |
 | attachments | transaction_id | transactions.id（可空） |
@@ -166,6 +169,7 @@ c142345  docs: 补齐项目记忆（阶段3已完成项/关键决策/踩坑/编�
 - `categories` 有 `type` 枚举 `income`/`expense`，唯一约束 `(ledger_id, type, name)`
 - `accounts` 唯一约束 **`(user_id, name)`**（同一用户下账户名不重复，不同用户可同名）
 - `accounts` 属于**个人**（"我用什么付款"），跨账本复用；`transactions.account_id` 为 `ON DELETE SET NULL`
+- `categories` 属于**账本**（记账的聚合维度），`icon`/`sort_order` 可选；`transactions.category_id` 同样 `ON DELETE SET NULL`（决策 B）
 - `accounts.opening_balance` 字段保留但**不做余额功能**（不暴露、不计算）
 - `transactions.type` 目前只有 `income`/`expense`，**前端还有"转账"类型，待扩展**
 - `transactions` 模型**尚未加 `$fillable`**（阶段 4 写流水接口时必须先加，否则 MassAssignmentException）
@@ -232,13 +236,16 @@ c142345  docs: 补齐项目记忆（阶段3已完成项/关键决策/踩坑/编�
     - `update`：仅所有者；`sometimes` 规则支持局部更新；`$ledger->update($data)`
     - `destroy`：仅所有者 + **`confirm:true` 二次确认**（未确认返回 422 并附关联数量）；`DB::transaction` 级联删除
 15. **账户接口 4 个**（`AccountController`）：`/api/accounts` 不嵌套 —— 账户属于个人（见第 10 节决策）。`destroy` 用**决策 B**：被流水引用时需 `confirm:true`
-16. **路由模块化扩展**：新增 `routes/api/ledger.php`、`routes/api/account.php`，`routes/api.php` 里 require
-17. **账户归属重构**：迁移 `..._000008`，`accounts.user_id` 取代 `ledger_id`；`transactions.account_id` 改可空 + `ON DELETE SET NULL`
-18. 待做：**categories CRUD**、**家庭成员管理**
+16. **分类接口 4 个**（`CategoryController`）：`/api/ledgers/{id}/categories` **嵌套**在账本下（分类属于账本）；`index` 支持 `?type=expense` 筛选；唯一约束三维 `(ledger_id, type, name)`；`destroy` 用**决策 B**
+17. **路由模块化扩展**：新增 `routes/api/ledger.php`、`routes/api/account.php`、`routes/api/category.php`，`routes/api.php` 里 require
+18. **两次归属/删除策略重构（迁移）**：
+    - `..._000008`：`accounts.user_id` 取代 `ledger_id`；`transactions.account_id` 改可空 + `ON DELETE SET NULL`
+    - `..._000009`：`transactions.category_id` 改可空 + `ON DELETE SET NULL`
+19. 待做：**家庭成员管理**
 
 ### 教学/技术成果（用户是 Laravel 初学者）
 - 已理解：模型↔表映射、belongsTo/hasMany、N+1 与 `with()`、JWT 流程、401 vs 403、Model vs Controller 分工
-- 阶段 3 新增：`$request->validate()` 与 whitelist、`Rule::unique->where()->ignore()`、`sometimes` 局部更新、`in:` 枚举校验、`exists:` 关联校验、`DB::transaction` 事务与级联删除、软删除 vs 数据库外键、二次确认（`confirm`）、私有辅助方法与"用关联查找子资源"（`$user->accounts()->find($id)` 天然隔离越权）
+- 阶段 3 新增：`$request->validate()` 与 whitelist、`Rule::unique->where()->ignore()`（含**三维唯一约束**的写法）、`sometimes` 局部更新、`in:` 枚举校验（对应数据库 enum）、`exists:` 关联校验、`DB::transaction` 事务与级联删除、软删除 vs 数据库外键、二次确认（`confirm`）、**私有辅助方法**（`findOwnedLedger` / `findViewableLedger` 区分"可读"与"可写"）、嵌套路由、用关联查找子资源（天然隔离越权与跨账本访问）
 
 ---
 
@@ -262,21 +269,36 @@ c142345  docs: 补齐项目记忆（阶段3已完成项/关键决策/踩坑/编�
 | POST | `/api/accounts` | ✅ | 新增账户（同一用户下重名 422） |
 | PUT | `/api/accounts/{id}` | ✅ | 改账户（`Rule::unique` + `ignore`） |
 | DELETE | `/api/accounts/{id}` | ✅ | 删账户（**决策 B**：被流水引用时需 `confirm:true`，否则 422 + 引用数量；未被引用可直接删） |
+| GET | `/api/ledgers/{id}/categories` | ✅ | 账本下的分类（支持 `?type=income\|expense` 筛选；家庭成员可读） |
+| POST | `/api/ledgers/{id}/categories` | ✅ | 新增分类（`name`+`type` 必填；`in:income,expense`；唯一约束 `(ledger_id,type,name)`） |
+| PUT | `/api/ledgers/{id}/categories/{categoryId}` | ✅ | 改分类（`sometimes` + `ignore` 排除自己） |
+| DELETE | `/api/ledgers/{id}/categories/{categoryId}` | ✅ | 删分类（**决策 B**：被流水引用需 `confirm:true`；删除后流水 `category_id` 置 NULL） |
 
 路由中间件：`auth:api`（用 `api` 守卫，即 JWT）。
 
-### 8.1 已完成并提交（阶段 3 前半）
+**权限规则（阶段 3 统一）**
+
+| 资源 | 读 | 写（增/改/删） |
+|---|---|---|
+| 账本 | 所有者 + 家庭成员 | 仅 `owner_id` |
+| 分类 | 所有者 + 家庭成员 | 仅 `owner_id` |
+| 账户 | 仅本人（`user_id`） | 仅本人 |
+
+### 8.1 已完成并提交（阶段 3）
 ```
 3c0ec35  ledger接口：index/show + 归属校验
 ec81a15  ledger接口：update/destroy（事务级联删除）
 a6d0a5b  ledger删除加二次确认（confirm + 关联数量）
 05b5c2b  账户改为属于个人（设置）：/api/accounts + 迁移 + 模型调整
+1ae69b5  账户删除改为二次确认（决策B）：被流水引用时需 confirm:true
+7ea0e8c  categories接口：/api/ledgers/{id}/categories + 决策B删除（nullOnDelete）
 ```
 
 > 阶段 2（JWT）那批文件已在 commit `d6af93c` 入库。
 > 代码要点：账本 `index` 用 `where('owner_id',$user->id)->when(...orWhereIn('family_id',$familyIds))`；`show` 先 `find()` 判 404，再用 `owner_id` / `familyMemberships()` 判 403。
 > 账户接口要点：`auth()->user()->accounts()->find($id)` 天然只能找到自己的账户（越权 id → 404）；`transactions.account_id` 为 `ON DELETE SET NULL`，删账户不毁记账历史。
-> 尚未完成：`categories` CRUD、家庭成员管理。
+> 分类接口要点：路由嵌套 `/ledgers/{id}/categories`；`$ledger->categories()->find($categoryId)` 天然隔离**跨账本**访问（用账本1 的路径访问账本4 的分类 → 404）；`index` 用 `findViewableLedger`（家庭成员可读）、写操作用 `findOwnedLedger`（仅所有者）。
+> 尚未完成：**家庭成员管理**。
 
 ---
 
@@ -287,7 +309,7 @@ a6d0a5b  ledger删除加二次确认（confirm + 关联数量）
 | 1 | 模型 + 关联 + Seeder | ✅ |
 | 2 | JWT 认证 | ✅ |
 | 2.5 | 提交 JWT 那批代码 | ✅ `d6af93c` |
-| **3** | 基础资源 CRUD（ledgers/accounts/categories/成员）+ 归属校验(403) | 🟡 **进行中**：ledgers ✅、accounts ✅（已改为属于个人）；剩 categories、家庭成员 |
+| **3** | 基础资源 CRUD（ledgers/accounts/categories/成员）+ 归属校验(403) | 🟡 **进行中**：ledgers ✅、accounts ✅（属于个人）、categories ✅（属于账本）；**剩家庭成员管理** |
 | 4 | 记账核心（transactions CRUD + 筛选/分页/批量删除/子项/转账/周期） | ⬜ |
 | 5 | 聚合查询接口（dashboard / calendar / analytics） | ⬜ |
 | 6 | 附件与 OCR（上传 + OCR Service 可替换 + 确认入账） | ⬜ |
@@ -318,6 +340,7 @@ a6d0a5b  ledger删除加二次确认（confirm + 关联数量）
 | **不做账户余额功能** | 个人账户模型下"余额算哪个账本的"无法自洽；`opening_balance` 字段保留但接口不暴露、前端不显示 |
 | **删账户不毁记账历史** | `transactions.account_id` 改 `ON DELETE SET NULL`（付款方式已删除，流水保留） |
 | **被引用的账户"二次确认后可删"**（决策 B，2026-09 用户决定） | 422 拦住默认删除并回报引用数量；带 `confirm:true` 则真删，关联流水 `account_id` 置 NULL。权衡：允许用户清理不用的支付方式（如已注销的卡），代价是历史流水的付款方式丢失 → **前端必须把 NULL 显示为"已删除"**。（备选方案 A"永不允许删"因体验僵化被否） |
+| **被引用的分类同样"二次确认后可删"**（决策 B 保持一致） | 与账户同策略：迁移 `..._000009` 把 `transactions.category_id` 改为 `ON DELETE SET NULL`；删除后流水显示"未分类"。**理由：两套删除规则会让阶段 4 的流水接口难以维护** |
 | **账本删除不级联删账户** | 账户是别人的东西，删账本凭什么删我的微信；事务里只删流水/分类/附件 |
 | **教学方式：用户手写代码，我讲解+验证** | 用户明确要求"不要直接帮我写完"，涉及写代码先问 |
 
@@ -352,6 +375,8 @@ a6d0a5b  ledger删除加二次确认（confirm + 关联数量）
 | **`if` 块"吞掉"了后续语句**（最隐蔽） | 缩进把 `$account->delete()` 放进了 `if ($usedCount > 0) {}` 里 → 未被引用的账户**删不掉，接口却返回 200 成功** | 结构约定：`if` 只负责"拦"（return 错误），**正文动作放在 `if` 外面**。这类 bug 不报错、返回成功、数据没变，**必须靠"删完再查一次"的测试才能发现** |
 | 接口返回成功 ≠ 数据真的变了 | 同上 | 测试用例要带"**操作后再查询确认**"这一步，不能只看 HTTP 200 |
 | 测试脚本自身的判断条件写错 | 用"名字包含 Probe"判断是否删除，匹配到了上一轮的残留记录，误报"没删掉" | 断言要针对**精确的 id**，不要用模糊匹配；测试前后都查一次库 |
+| 测试脚本取错 id | 想删"本次新建的分类"，却取了列表第一个 id（那是个有流水的旧分类）→ 误判用例失败 | 新建接口返回的 `data.id` 要**存下来**再用；不要"取列表第一条"当目标 |
+| 删分类/账户后流水引用变 NULL | 直接影响统计与展示 | **前端必须把 NULL 显示为"已删除"/"未分类"**（已列入第 14 节待办）；后端查询用 `with('category')` 时也要容忍 NULL |
 
 ---
 
