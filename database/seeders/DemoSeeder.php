@@ -102,10 +102,8 @@ class DemoSeeder extends Seeder
         ] as $type => $list) {
             $i = 0;
             foreach ($list as $name => $icon) {
-                $categories[$name] = Category::firstOrCreate(
-                    ['ledger_id' => $familyLedger->id, 'type' => $type, 'name' => $name],
-                    ['icon' => $icon, 'sort_order' => $i++]
-                );
+                $categories[$name] = Category::where('type', $type)
+                    ->where('name', $name)->whereNotNull('parent_id')->firstOrFail();
             }
         }
 
@@ -167,7 +165,7 @@ class DemoSeeder extends Seeder
         $this->command->info("  家庭      : " . Family::count());
         $this->command->info("  家庭账本  : {$familyLedger->name}");
         $this->command->info("  账户      : " . count($accounts) . "（属于 " . $users['lin']->name . "）");
-        $this->command->info("  分类      : " . Category::where('ledger_id', $familyLedger->id)->count());
+        $this->command->info("  分类      : " . Category::count());
         $this->command->info("  流水      : " . Transaction::where('ledger_id', $familyLedger->id)->count());
         $this->command->info("  附件      : " . Attachment::count());
     }

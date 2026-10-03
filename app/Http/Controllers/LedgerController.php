@@ -134,7 +134,6 @@ class LedgerController extends Controller
                 'message' => '删除不可恢复，请确认后重试',
                 'data' => [
                     'transactions' => $ledger->transactions()->count(),
-                    'categories'   => $ledger->categories()->count(),
                     'attachments'  => $ledger->attachments()->count(),
                 ],
             ], 422);
@@ -144,7 +143,6 @@ class LedgerController extends Controller
             $ledger->attachments()->delete();          // 真删
             $ledger->transactions()->forceDelete();    //  软删模型必须 forceDelete
             // 账户不删：accounts 属于用户（个人设置），跨账本复用，删账本不该连累它
-            $ledger->categories()->delete();
             $ledger->delete();                         // 最后才删账本自己
         });
 
