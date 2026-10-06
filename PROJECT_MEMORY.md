@@ -1,6 +1,6 @@
 # Mosaic 家庭财务系统 — 项目记忆
 
-> 最后更新：阶段 3 进行中 —— ledgers ✅ / accounts ✅ / categories ✅，剩家庭成员管理
+> 最后更新：前端开始对接 —— 登录/注册页完成、账本列表接真实接口；后端补多语言基础（zh_CN）
 > 用途：记录项目全貌、进度、决策与待办，供后续开发/答辩参考
 
 ---
@@ -27,8 +27,11 @@
 
 ## 0. 一句话概括
 
-AI 生成的家庭记账前端（Vue3，纯静态 mock），配一套 Laravel 9 后端，做毕业设计。
-**当前进度：阶段 1（模型+关联+Seeder）、阶段 2（JWT 认证）已完成并提交；阶段 3（基础资源 CRUD）进行中 —— 账本（ledgers）5 个接口 ✅、账户（accounts）4 个接口 ✅（账户已改为属于个人）、分类（categories）4 个接口 ✅（属于账本）；剩家庭成员管理。**
+AI 生成的家庭记账前端（Vue3），配一套 Laravel 9 后端，做毕业设计。
+
+**当前进度**
+- **后端**：阶段 1（模型+关联+Seeder）✅、阶段 2（JWT 认证）✅、阶段 3 基础资源 CRUD —— 账本 5 接口 ✅、账户 4 接口 ✅（属于个人）、分类 4 接口 ✅（属于账本）；剩**家庭成员管理**。另已补**多语言基础**（zh_CN + `Accept-Language`）。
+- **前端**（`MosaicwithAi`）：**已开始对接后端** —— API 客户端（axios + 拦截器）✅、登录态 store ✅、路由守卫 ✅、登录页（按 `stitch_ui` 设计稿）✅、注册页 ✅、侧栏真实用户 + 退出 ✅、账本列表接 `GET /api/ledgers` ✅。其他页面（首页/日历/账目/统计/家庭/设置/OCR）**仍是静态 mock**。
 
 ---
 
@@ -56,6 +59,24 @@ AI 生成的家庭记账前端（Vue3，纯静态 mock），配一套 Laravel 9 
 
 > **为什么用 JWT 而不是 Sanctum**：前端（`Mosaic-Frontend`）是按 JWT 写的（`token.split('.')[1]` 解 payload），且期望 `{code, data}` 响应信封。用 JWT 对接改动最小。
 > 注：`laravel/sanctum` 包仍在，但已不使用。
+
+### 多语言（i18n）基础 —— 中/英/日
+
+| 层 | 现状 | 位置 |
+|---|---|---|
+| 语言文件 | ✅ `zh_CN`（简体中文，取自 `laravel-lang/lang`）、`en`（Laravel 自带） | `lang/zh_CN/`、`lang/en/` |
+| 默认语言 | `APP_LOCALE=zh_CN`，兜底 `APP_FALLBACK_LOCALE=en` | `.env` |
+| 语言白名单 | `'supported_locales' => ['zh_CN','en','ja']` | `config/app.php` |
+| 运行时切换 | 中间件读 `Accept-Language` 请求头 → `App::setLocale()` | `app/Http/Middleware/SetLocale.php`（注册在全局 `$middleware`） |
+| 前端配合 | axios 请求拦截器自动带 `Accept-Language`（默认 `zh-CN`，localStorage 键 `mosaic_locale`） | `src/api/client.ts` |
+| 字段中文名 | `lang/zh_CN/validation.php` 里的 `attributes`，让提示显示"邮箱"而非 `email` | 同左 |
+
+**以后要加日文，只需 3 步（代码不用改）**：
+1. 在 `lang/` 下新增 `ja/validation.php`（可从 `laravel-lang/lang` 的 `locales/ja/php.json` 转换；⚠️ 日文覆盖率偏低，缺的规则是英文兜底，需要手写）
+2. `config/app.php` 的 `supported_locales` 里已经有 `'ja'`，无需改
+3. 前端加语言切换（写入 `mosaic_locale`）→ 请求头自动跟随
+
+> ⚠️ 前端界面文字目前是**硬编码中文**，要做界面级多语言需引入 `vue-i18n` 并把文案抽成 key（工作量大，暂列"未来展望"）。目前的多语言只覆盖**后端返回的消息**（校验提示等）。
 
 ---
 
@@ -242,6 +263,16 @@ c142345  docs: 补齐项目记忆（阶段3已完成项/关键决策/踩坑/编�
     - `..._000008`：`accounts.user_id` 取代 `ledger_id`；`transactions.account_id` 改可空 + `ON DELETE SET NULL`
     - `..._000009`：`transactions.category_id` 改可空 + `ON DELETE SET NULL`
 19. 待做：**家庭成员管理**
+20. **多语言基础**：`lang/zh_CN/`（校验消息中文）+ `SetLocale` 中间件（按 `Accept-Language` 切换）+ `config('app.supported_locales')`
+
+### 前端对接（MosaicwithAi，2026-09 开始）
+
+21. **依赖与构建**：从 pnpm 转为 **npm**（删 `node_modules` 重装，保留 `pnpm-lock.yaml.pnpm-bak` 备份）；装了 `axios@1.20`
+22. **API 层**（`src/api/`）：`client.ts`（axios 实例 + 请求拦截器带 JWT/语言 + 响应拦截器剥信封/统一错误/401 跳登录）、`auth.ts`（login/register/me/logout/refresh）
+23. **状态层**：`stores/auth.ts`（登录态 + `fetchMe` 用 token 换用户）、`stores/ledger.ts`（**改为调 `GET /api/ledgers`**，不再写死假数据）
+24. **路由**：`/login`、`/register` 独立布局 + 全局守卫（未登录跳登录页，带 `redirect` 回跳）
+25. **页面**：`Login.vue`（**按 `stitch_ui/登录与注册` 设计稿重写**：左右分栏 + 密码/验证码 tab）、`Register.vue`（新建，同设计）；`AppLayout.vue`（侧栏真实用户 + 退出登录 + 挂载时拉账本）
+26. **待做**：其余页面接后端（首页/日历/账目/统计/家庭/设置/OCR）
 
 ### 教学/技术成果（用户是 Laravel 初学者）
 - 已理解：模型↔表映射、belongsTo/hasMany、N+1 与 `with()`、JWT 流程、401 vs 403、Model vs Controller 分工
@@ -252,6 +283,14 @@ c142345  docs: 补齐项目记忆（阶段3已完成项/关键决策/踩坑/编�
 ## 8. 当前 API 接口
 
 统一返回 `{ code, message, data }`，认证失败统一 **401 JSON**（不重定向）。
+
+**请求头约定**
+
+| 头 | 作用 |
+|---|---|
+| `Authorization: Bearer <token>` | JWT 认证（受保护接口必需） |
+| `Accept: application/json` | 让 Laravel 返回 JSON 而不是重定向（前端 axios 已默认带上） |
+| `Accept-Language` | **决定返回消息的语言**（`zh-CN` / `en` / `ja`），由 `SetLocale` 中间件处理；不传则用 `APP_LOCALE=zh_CN` |
 
 | 方法 | 地址 | 需要 token | 说明 |
 |---|---|---|---|
@@ -292,6 +331,7 @@ a6d0a5b  ledger删除加二次确认（confirm + 关联数量）
 05b5c2b  账户改为属于个人（设置）：/api/accounts + 迁移 + 模型调整
 1ae69b5  账户删除改为二次确认（决策B）：被流水引用时需 confirm:true
 7ea0e8c  categories接口：/api/ledgers/{id}/categories + 决策B删除（nullOnDelete）
+c9ad67b  多语言基础：zh_CN 语言包 + SetLocale 中间件（Accept-Language）
 ```
 
 > 阶段 2（JWT）那批文件已在 commit `d6af93c` 入库。
@@ -415,6 +455,8 @@ config/ai.php                              provider / model / key / 限流
 | **被引用的分类同样"二次确认后可删"**（决策 B 保持一致） | 与账户同策略：迁移 `..._000009` 把 `transactions.category_id` 改为 `ON DELETE SET NULL`；删除后流水显示"未分类"。**理由：两套删除规则会让阶段 4 的流水接口难以维护** |
 | **账本删除不级联删账户** | 账户是别人的东西，删账本凭什么删我的微信；事务里只删流水/分类/附件 |
 | **教学方式：用户手写代码，我讲解+验证** | 用户明确要求"不要直接帮我写完"，涉及写代码先问 |
+| **多语言用 `Accept-Language` 请求头，而不是全局切换**（2026-09） | 语言按**每个请求**决定：前端在请求头带 `Accept-Language`，中间件 `SetLocale` 切换。好处：用户切换语言无需重新登录/改后端配置；同一后端可同时服务中英日用户。已预留 `supported_locales = [zh_CN, en, ja]` |
+| **前端界面暂不做 i18n** | 界面文案目前硬编码中文；引入 `vue-i18n` 需把几百条文案抽成 key，工作量大 → 列"未来展望"。当前多语言只覆盖**后端消息**（校验提示等） |
 
 ---
 
@@ -444,6 +486,9 @@ config/ai.php                              provider / model / key / 限流
 | **PHP 里用 `=` 当比较**（测试脚本） | 误用他人 token 跑了删除用例，真删了数据 | 比较用 `==`/`-eq`；测试脚本也要 review，破坏性用例先备份/可重跑种子 |
 | **删用户前没处理他的账户** | `Cannot delete or update a parent row`（1451） | `accounts.user_id` 是 `ON DELETE RESTRICT`；删用户要先删/转他的账户 |
 | **`php artisan tinker` 报 PsySH 写历史失败** | `Writing to .../psysh_history is not allowed` | 沙箱环境下 tinker 用不了；改用它 `DB::select` 的独立 PHP 脚本或直接 PDO 查数据 |
+| **语言文件键名用点号扁平写法** | 生成 `lang/zh_CN/validation.php` 得到 `'between.array' => ...`，而 Laravel 要求**嵌套数组** `'between' => ['array' => ...]` → 该规则找不到消息、**静默回退英文** | 转换 JSON 语言包时必须把点号键**重新嵌套**；生成后实测一条带子键的规则（`between`/`min`） |
+| **`:attribute` 显示英文字段名** | 提示是"email 已经存在。"而不是"邮箱 已经存在。" | 字段中文名要放进 `lang/zh_CN/validation.php` 的 **`attributes` 数组**；单独建 `validation.attributes.php` 文件**不生效** |
+| 照 Laravel 10+ 文档装 `laravel-lang/lang` | v15 面向 L10+，会带入大量依赖更新 | 本项目只需语言文件：直接取仓库 `locales/zh_CN/php.json` 转成 PHP 文件即可，**不动 composer 依赖** |
 | **`if` 块"吞掉"了后续语句**（最隐蔽） | 缩进把 `$account->delete()` 放进了 `if ($usedCount > 0) {}` 里 → 未被引用的账户**删不掉，接口却返回 200 成功** | 结构约定：`if` 只负责"拦"（return 错误），**正文动作放在 `if` 外面**。这类 bug 不报错、返回成功、数据没变，**必须靠"删完再查一次"的测试才能发现** |
 | 接口返回成功 ≠ 数据真的变了 | 同上 | 测试用例要带"**操作后再查询确认**"这一步，不能只看 HTTP 200 |
 | 测试脚本自身的判断条件写错 | 用"名字包含 Probe"判断是否删除，匹配到了上一轮的残留记录，误报"没删掉" | 断言要针对**精确的 id**，不要用模糊匹配；测试前后都查一次库 |
