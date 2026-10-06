@@ -23,6 +23,8 @@ class Kernel extends HttpKernel
         \Illuminate\Foundation\Http\Middleware\ConvertEmptyStringsToNull::class,
         // 按 Accept-Language / 用户偏好切换语言（多语言基础）
         \App\Http\Middleware\SetLocale::class,
+        // JSON 响应中文不转义（放在最后：响应生成后再设置编码选项）
+        \App\Http\Middleware\ForceJsonUnicode::class,
     ];
 
     /**

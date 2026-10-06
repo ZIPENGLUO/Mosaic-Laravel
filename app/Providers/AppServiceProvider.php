@@ -23,6 +23,7 @@ class AppServiceProvider extends ServiceProvider
      */
     public function boot()
     {
-        //
+        // JSON 中文不转义由 app/Http/Middleware/ForceJsonUnicode.php 处理
+        // （这里曾尝试用 Response::macro('json') 覆盖，实测在 Laravel 9 上不生效）
     }
 }
