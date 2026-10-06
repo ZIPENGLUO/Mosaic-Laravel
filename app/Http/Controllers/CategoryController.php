@@ -21,6 +21,38 @@ use Illuminate\Validation\Rule;
 class CategoryController extends Controller
 {
     /**
+     * 可查看的账本：所有者或家庭成员（只读场景用）
+     */
+    private function findViewableLedger($id)
+    {
+        $user = auth()->user();
+        $ledger = Ledger::find($id);
+        if (! $ledger) {
+            return null;
+        }
+
+        $isMine = $ledger->owner_id === $user->id;
+        $isFamily = $ledger->family_id
+            && $user->familyMemberships()->where('family_id', $ledger->family_id)->exists();
+
+        return ($isMine || $isFamily) ? $ledger : null;
+    }
+
+    /**
+     * 可管理的账本：只有所有者（写操作场景用）
+     * 返回 null 表示"不存在或无权"，调用处统一返回 404（不泄漏资源是否存在）
+     */
+    private function findOwnedLedger($id)
+    {
+        $ledger = Ledger::find($id);
+        if (! $ledger || $ledger->owner_id !== auth()->id()) {
+            return null;
+        }
+
+        return $ledger;
+    }
+
+    /**
      * 账本下的分类列表
      * GET /api/ledgers/{id}/categories?type=expense
      */
@@ -72,16 +104,16 @@ class CategoryController extends Controller
                     ->where('type', $request->input('type')),
             ],
             // 对应数据库 enum('income','expense')：不校验就会撞约束报 500
-            'type'       => 'required|in:income,expense',
-            'icon'       => 'nullable|string|max:100',
+            'type' => 'required|in:income,expense',
+            'icon' => 'nullable|string|max:100',
             'sort_order' => 'nullable|integer|min:0',
         ]);
 
         $category = Category::create([
-            'ledger_id'  => $ledger->id,          // 归属由后端决定，不信客户端
-            'name'       => $data['name'],
-            'type'       => $data['type'],
-            'icon'       => $data['icon'] ?? null,
+            'ledger_id' => $ledger->id,          // 归属由后端决定，不信客户端
+            'name' => $data['name'],
+            'type' => $data['type'],
+            'icon' => $data['icon'] ?? null,
             'sort_order' => $data['sort_order'] ?? 0,
         ]);
 
@@ -119,8 +151,8 @@ class CategoryController extends Controller
                     ->where('type', $request->input('type', $category->type))  // 没传 type 就用原值
                     ->ignore($category->id),                                    // 排除自己
             ],
-            'type'       => 'sometimes|in:income,expense',
-            'icon'       => 'nullable|string|max:100',
+            'type' => 'sometimes|in:income,expense',
+            'icon' => 'nullable|string|max:100',
             'sort_order' => 'sometimes|integer|min:0',
         ]);
 
@@ -168,43 +200,10 @@ class CategoryController extends Controller
             }
         }
 
-        // ⚠️ 放在 if 外面：没被引用的分类也要走到这里，否则会"返回成功但没删"
         $category->delete();
 
         return response()->json([
             'code' => 200, 'message' => '分类已删除', 'data' => null,
         ]);
-    }
-
-    /**
-     * 可查看的账本：所有者或家庭成员（只读场景用）
-     */
-    private function findViewableLedger($id)
-    {
-        $user = auth()->user();
-        $ledger = Ledger::find($id);
-        if (! $ledger) {
-            return null;
-        }
-
-        $isMine = $ledger->owner_id === $user->id;
-        $isFamily = $ledger->family_id
-            && $user->familyMemberships()->where('family_id', $ledger->family_id)->exists();
-
-        return ($isMine || $isFamily) ? $ledger : null;
-    }
-
-    /**
-     * 可管理的账本：只有所有者（写操作场景用）
-     * 返回 null 表示"不存在或无权"，调用处统一返回 404（不泄漏资源是否存在）
-     */
-    private function findOwnedLedger($id)
-    {
-        $ledger = Ledger::find($id);
-        if (! $ledger || $ledger->owner_id !== auth()->id()) {
-            return null;
-        }
-
-        return $ledger;
     }
 }
