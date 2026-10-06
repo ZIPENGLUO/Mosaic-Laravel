@@ -292,6 +292,8 @@ c142345  docs: 补齐项目记忆（阶段3已完成项/关键决策/踩坑/编�
 | `Accept: application/json` | 让 Laravel 返回 JSON 而不是重定向（前端 axios 已默认带上） |
 | `Accept-Language` | **决定返回消息的语言**（`zh-CN` / `en` / `ja`），由 `SetLocale` 中间件处理；不传则用 `APP_LOCALE=zh_CN` |
 
+> JSON 响应里的中文是**直接输出**的（不是 `\uXXXX` 转义），由 `ForceJsonUnicode` 中间件保证。
+
 | 方法 | 地址 | 需要 token | 说明 |
 |---|---|---|---|
 | POST | `/api/auth/register` | ❌ | 注册（bcrypt 加密 + 发 token） |
@@ -489,6 +491,10 @@ config/ai.php                              provider / model / key / 限流
 | **语言文件键名用点号扁平写法** | 生成 `lang/zh_CN/validation.php` 得到 `'between.array' => ...`，而 Laravel 要求**嵌套数组** `'between' => ['array' => ...]` → 该规则找不到消息、**静默回退英文** | 转换 JSON 语言包时必须把点号键**重新嵌套**；生成后实测一条带子键的规则（`between`/`min`） |
 | **`:attribute` 显示英文字段名** | 提示是"email 已经存在。"而不是"邮箱 已经存在。" | 字段中文名要放进 `lang/zh_CN/validation.php` 的 **`attributes` 数组**；单独建 `validation.attributes.php` 文件**不生效** |
 | 照 Laravel 10+ 文档装 `laravel-lang/lang` | v15 面向 L10+，会带入大量依赖更新 | 本项目只需语言文件：直接取仓库 `locales/zh_CN/php.json` 转成 PHP 文件即可，**不动 composer 依赖** |
+| **JSON 响应中文被转义成 `\u6797\u6c0f`** | Postman Raw 视图/日志里看不到中文 | 原因：本项目 Laravel 9.52 装的是 **symfony/http-foundation 6.0**，其 `JsonResponse` 默认 `encodingOptions = 0`（不含 `JSON_UNESCAPED_UNICODE`）。**前端不受影响**（JSON 解析自动还原），只是人肉看难读 |
+| ↳ 试过但**无效**的修法（别再试） | — | ① `JsonResponse::setEncodingOptions()` —— 是**实例方法**，静态调用直接报错；② `Response::macro('json', ...)` —— Laravel 9 的 `response()->json()` **不走这个宏**，无效果 |
+| ↳ **有效修法** | — | 中间件 `ForceJsonUnicode`：拿到响应后调 `$response->setEncodingOptions($response->getEncodingOptions() \| JSON_UNESCAPED_UNICODE \| JSON_UNESCAPED_SLASHES)`（注册在全局 `$middleware` 最后） |
+| PowerShell 里看响应中文变乱码（`ç»å½æå`） | 明明后端已不转义 | 是 **`Invoke-WebRequest` 的 `.Content` 按 Latin-1 解码 UTF-8** 所致，不是服务端问题。测试时用 `[Text.Encoding]::UTF8.GetString($r.RawContentStream.ToArray())`，或直接 `ConvertFrom-Json` 后看字段 |
 | **`if` 块"吞掉"了后续语句**（最隐蔽） | 缩进把 `$account->delete()` 放进了 `if ($usedCount > 0) {}` 里 → 未被引用的账户**删不掉，接口却返回 200 成功** | 结构约定：`if` 只负责"拦"（return 错误），**正文动作放在 `if` 外面**。这类 bug 不报错、返回成功、数据没变，**必须靠"删完再查一次"的测试才能发现** |
 | 接口返回成功 ≠ 数据真的变了 | 同上 | 测试用例要带"**操作后再查询确认**"这一步，不能只看 HTTP 200 |
 | 测试脚本自身的判断条件写错 | 用"名字包含 Probe"判断是否删除，匹配到了上一轮的残留记录，误报"没删掉" | 断言要针对**精确的 id**，不要用模糊匹配；测试前后都查一次库 |
