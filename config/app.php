@@ -82,33 +82,25 @@ return [
     |
     */
 
-    'locale' => 'en',
-
     /*
     |--------------------------------------------------------------------------
-    | Application Fallback Locale
+    | 支持的语言（多语言基础）
     |--------------------------------------------------------------------------
     |
-    | The fallback locale determines the locale to use when the current one
-    | is not available. You may change the value to correspond to any of
-    | the language folders that are provided through your application.
+    | 目前准备了 zh_CN（简体中文）与 en（英文），lang/ 下各一个目录。
+    | 以后要加日文，只需在 lang/ 下新增 ja/ 目录，并在这里的 supported_locales
+    | 里加上 'ja' 即可 —— 代码不用改。
     |
     */
 
-    'fallback_locale' => 'en',
+    'locale' => env('APP_LOCALE', 'en'),
 
-    /*
-    |--------------------------------------------------------------------------
-    | Faker Locale
-    |--------------------------------------------------------------------------
-    |
-    | This locale will be used by the Faker PHP library when generating fake
-    | data for your database seeds. For example, this will be used to get
-    | localized telephone numbers, street address information and more.
-    |
-    */
+    'fallback_locale' => env('APP_FALLBACK_LOCALE', 'en'),
 
-    'faker_locale' => 'en_US',
+    /** 允许通过 Accept-Language 请求头切换的语言白名单 */
+    'supported_locales' => ['zh_CN', 'en', 'ja'],
+
+    'faker_locale' => env('APP_FAKER_LOCALE', 'en_US'),
 
     /*
     |--------------------------------------------------------------------------

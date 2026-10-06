@@ -21,6 +21,8 @@ class Kernel extends HttpKernel
         \Illuminate\Foundation\Http\Middleware\ValidatePostSize::class,
         \App\Http\Middleware\TrimStrings::class,
         \Illuminate\Foundation\Http\Middleware\ConvertEmptyStringsToNull::class,
+        // 按 Accept-Language / 用户偏好切换语言（多语言基础）
+        \App\Http\Middleware\SetLocale::class,
     ];
 
     /**
