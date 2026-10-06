@@ -312,7 +312,7 @@ a6d0a5b  ledger删除加二次确认（confirm + 关联数量）
 | **3** | 基础资源 CRUD（ledgers/accounts/categories/成员）+ 归属校验(403) | 🟡 **进行中**：ledgers ✅、accounts ✅（属于个人）、categories ✅（属于账本）；**剩家庭成员管理** |
 | 4 | 记账核心（transactions CRUD + 筛选/分页/批量删除/子项/转账/周期） | ⬜ |
 | 5 | 聚合查询接口（dashboard / calendar / analytics） | ⬜ |
-| 6 | 附件与 OCR（上传 + OCR Service 可替换 + 确认入账） | ⬜ |
+| 6 | 附件与 OCR（上传 + OCR Service 可替换 + 确认入账） | ⬜ **与 AI 智能体共用 AiService** |
 | 7 | 家庭协同（邀请/额度/分摊/动态流） | ⬜ |
 | 8 | 设置（资料/薪资/偏好） | ⬜ |
 | 9 | 导出（Excel/CSV、PDF 报告） | ⬜ |
@@ -322,6 +322,78 @@ a6d0a5b  ledger删除加二次确认（confirm + 关联数量）
 ### 待补迁移（对应第 6 节前端需求）
 `ledger_members`、`budgets`、`transaction_items`、`recurring_transactions`、`user_settings`、`settlements`、`invitations`、`activity_logs`
 以及：`users` 加 `phone/nickname/avatar/title`；`ledgers` 加 `type/description`；`transactions` 支持转账
+
+### 阶段插入：AI 智能体（详见第 9.5 节）
+**放在阶段 5 之后、阶段 6（OCR）之前做** —— 它依赖流水的 CRUD 与聚合接口作为"工具"；OCR 与本功能共用同一套可替换的 AI Service。
+
+---
+
+## 9.5 AI 智能体接入方案（规划）
+
+> 用户明确要求接入（2026-09）。本节只记方案与决策点，**实现要等阶段 4、5 做完**。
+
+### 目标能力（按优先级）
+
+| # | 能力 | 说明 | 备注 |
+|---|---|---|---|
+| ① | **自然语言记账** | "昨天盒马买菜 328.6 微信付的" → 解析成流水草稿 → 用户确认入账 | 复用阶段 4 的落库逻辑 |
+| ② | **查账问答（核心）** | "这个月外卖花了多少""我跟陈先生谁花得多" → 调工具查库 + 自然语言回答 | 靠 **tool calling**，最能体现"智能体" |
+| ③ | **智能分类** | 记账/OCR 时自动建议分类（"盒马鲜生" → 生鲜食品） | 与 OCR 共用 LLM |
+| ④ | **洞察/预算提醒** | "本月餐饮超预算 23%" | 基于阶段 5 的聚合接口 + 提示词 |
+| ❌ | 多智能体协作、自动执行转账、长期记忆 | 明确不做，写进论文"未来展望" | 时间与风险不划算 |
+
+### 架构
+
+```
+前端聊天面板
+  ↓ POST /api/ai/chat {message, ledger_id}
+AiController
+  ↓
+AiServiceInterface（★可替换，和 OCR Service 同一套路）
+  ↓
+LLM API（DeepSeek / 通义千问 / 智谱；国内可直连、便宜、兼容 OpenAI 格式）
+  ↓ tool_calls
+工具（复用已有接口逻辑，不另写 SQL）
+  ├─ getSpendingStats(ledger_id, month, category)   复用阶段 5 聚合
+  ├─ getTransactions(ledger_id, filters)            复用阶段 4 筛选
+  ├─ createTransaction(...)                         复用阶段 4 store
+  └─ getBudgets(ledger_id)                          复用阶段 5
+  ↓
+工具返回 JSON → 回喂模型 → 生成自然语言答案
+```
+
+### 设计要点（面试/答辩会被问）
+
+1. **API Key 只在后端 `.env`**（`AI_API_KEY` / `AI_BASE_URL` / `AI_MODEL`），**绝不暴露前端**，否则被盗刷。
+2. **AiService 可替换**：接口 + 实现类，换模型/换厂商只改一个类。**OCR（阶段 6）与智能体共用这套 Service**（一个管文本、一个管图像）。
+3. **工具必须复用已有接口/Service 逻辑，不让模型直接写 SQL** —— 这样**权限校验自动继承**（AI 也只能访问用户有权限的账本），也避免注入风险。
+4. **危险操作只生成"待确认草稿"**：删除、转账等必须用户点确认后才落库，AI 不能直接执行。
+5. **成本与稳定性**：每用户限流（如每天 N 次）、30s 超时、失败降级为友好报错。
+6. **多轮对话**（可选）：`ai_conversations` / `ai_messages` 表；不做则只支持单轮。
+
+### 待建文件（实现时用）
+
+```
+app/Services/Ai/AiServiceInterface.php     接口（可替换）
+app/Services/Ai/DeepSeekService.php        实现（provider 任选）
+app/Services/Ai/Tools/                     工具类（统计/流水/预算…）
+app/Http/Controllers/AiController.php      POST /api/ai/chat
+routes/api/ai.php                          require 进 routes/api.php
+config/ai.php                              provider / model / key / 限流
+.env                                       AI_API_KEY / AI_BASE_URL / AI_MODEL
+迁移（可选）                                ai_conversations / ai_messages
+```
+
+### 接入顺序（重要）
+
+| 顺序 | 事项 | 原因 |
+|---|---|---|
+| 1 | 阶段 4 流水 CRUD | AI 要记账/查账，先得有流水接口和数据 |
+| 2 | 阶段 5 聚合查询 | 直接变成 AI 的"工具"，不必重复实现 |
+| 3 | **AI 智能体（本节）** | 站在 4+5 之上，主要是"接模型 + 定义工具" |
+| 4 | 阶段 6 OCR | 与智能体共用 AiService |
+
+> ⚠️ **不要先做 AI**：工具函数还是空的时候，模型只能编答案，答辩最容易被问穿。
 
 ---
 
