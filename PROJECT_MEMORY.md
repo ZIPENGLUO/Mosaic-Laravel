@@ -1,6 +1,6 @@
 # Mosaic 家庭财务系统 — 项目记忆
 
-> 最后更新：前端开始对接 —— 登录/注册页完成、账本列表接真实接口；后端补多语言基础（zh_CN）
+> 最后更新：**成员模型重构完成**（删除家庭分组 → 每账本自带成员 `ledger_members`）；前端已适配并拉取真实成员
 > 用途：记录项目全貌、进度、决策与待办，供后续开发/答辩参考
 
 ---
@@ -30,7 +30,7 @@
 AI 生成的家庭记账前端（Vue3），配一套 Laravel 9 后端，做毕业设计。
 
 **当前进度**
-- **后端**：阶段 1（模型+关联+Seeder）✅、阶段 2（JWT 认证）✅、阶段 3 基础资源 CRUD —— 账本 5 接口 ✅、账户 4 接口 ✅（属于个人）、**分类改为全局公共目录**（只读 `GET /api/categories`）、家庭成员列表 ✅（`GET /api/families/{id}/members`）。另已补**多语言基础**（zh_CN + `Accept-Language`）。
+- **后端**：阶段 1（模型+关联+Seeder）✅、阶段 2（JWT 认证）✅、阶段 3 基础资源 CRUD —— 账本 5 接口 ✅、账户 4 接口 ✅（属于个人）、**分类改为全局公共目录**（只读 `GET /api/categories`）、**账本成员列表 ✅（`GET /api/ledgers/{id}/members`）**。另已补**多语言基础**（zh_CN + `Accept-Language`）。**成员模型已重构**：删掉"家庭分组"，改为每个账本自带成员（`ledger_members`）。
 - **前端**（`MosaicwithAi`）：**已开始对接后端** —— API 客户端（axios + 拦截器）✅、登录态 store ✅、路由守卫 ✅、登录页（按 `stitch_ui` 设计稿）✅、注册页 ✅、侧栏真实用户 + 退出 ✅、账本列表接 `GET /api/ledgers` ✅。其他页面（首页/日历/账目/统计/家庭/设置/OCR）**仍是静态 mock**。
 
 ---
@@ -146,36 +146,36 @@ c142345  docs: 补齐项目记忆（阶段3已完成项/关键决策/踩坑/编�
 
 ## 5. 数据库现状
 
-**表结构状态（14 个迁移 / 13 张表）**
+**表结构状态（15 个迁移 / 12 张表）**
 
 | 环境 | 数据库 | 迁移 | 数据 | 状态 |
 |---|---|---|---|---|
-| 自己电脑 | 本地 MySQL，库 `laravel`，账号 `root` | **14** | ✅ | ✅ 最新（含账户归属、分类全局目录） |
-| 阿里云服务器 | 服务器 MySQL，账号 `myapp_user` | 11 | ✅ | ⏸ 落后三个迁移（按"暂不更新"决策，等统一部署） |
-| GitHub 仓库 | — | **14 个文件** | — | ✅ |
+| 自己电脑 | 本地 MySQL，库 `laravel`，账号 `root` | **15** | ✅ | ✅ 最新（账户归属、分类全局目录、账本成员模型） |
+| 阿里云服务器 | 服务器 MySQL，账号 `myapp_user` | 11 | ✅ | ⏸ 落后四个迁移（按"暂不更新"决策，等统一部署） |
+| GitHub 仓库 | — | **15 个文件** | — | ✅ |
 | 公司电脑 | 本地 MySQL，账号 `root` | 4 | ⬜ | 需 `git pull` + `migrate` + `db:seed` |
 
 > ⚠️ **待补迁移（任何环境拉取代码后都必须跑 `php artisan migrate`**，否则表结构与代码不匹配）：
 > - `2026_09_10_000008_migrate_accounts_to_user_ownership`（账户改为属于个人）
 > - `2026_09_10_000009_migrate_transactions_category_id_to_null_on_delete`（删分类时流水置 NULL）
-> - `2026_10_01_000001_convert_categories_to_global_hierarchy`（**分类改为全局两级目录**；⚠️ `down()` 直接抛异常，不可回滚，只能恢复备份）
+> - `2026_10_01_000001_convert_categories_to_global_hierarchy`（**分类改为全局两级目录**；`down()` 直接抛异常）
+> - `2026_10_02_000001_replace_families_with_ledger_members`（**成员改为账本级**；删 families/family_members/ledgers.family_id；`down()` 不可回滚）
 
-**13 张表：**
+**12 张表：**
 
 ```
 默认表：users, password_resets, failed_jobs, personal_access_tokens, migrations
-业务表：families, family_members, ledgers, accounts, categories, transactions, attachments
+业务表：ledgers, ledger_members, accounts, categories, transactions, attachments
+（families / family_members 已于 2026-10 删除）
 ```
 
 **外键关系全表：**
 
 | 表 | 外键列 | 指向 |
 |---|---|---|
-| families | owner_id | users.id |
-| family_members | family_id | families.id |
-| family_members | user_id | users.id |
-| ledgers | owner_id | users.id |
-| ledgers | family_id | families.id（NULL = 个人账本） |
+| ledgers | owner_id | users.id（唯一能改/删账本的人） |
+| **ledger_members** | ledger_id | ledgers.id（cascadeOnDelete） |
+| **ledger_members** | user_id | users.id（cascadeOnDelete） |
 | accounts | **user_id** | users.id（⚠️ 2026-09 改为属于个人，原为 ledger_id） |
 | categories | **parent_id** | categories.id（⚠️ 2026-10 起为**全局两级目录**，已删 `ledger_id`） |
 | transactions | ledger_id | ledgers.id |
@@ -186,24 +186,31 @@ c142345  docs: 补齐项目记忆（阶段3已完成项/关键决策/踩坑/编�
 | attachments | transaction_id | transactions.id（可空） |
 | attachments | uploaded_by | users.id |
 
+> ⚠️ **2026-10 成员模型重构**：删除了 `families`、`family_members` 两张表和 `ledgers.family_id` 字段，
+> 改为 **`ledger_members`（每个账本自带成员）**。迁移 `2026_10_02_000001`（数据已搬迁：共享账本各得原家庭 4 名成员）。
+> `down()` 不可回滚（分组归属无法还原），只能恢复数据库备份。
+
 **业务表设计要点：**
 - `transactions` 有 `deleted_at`（软删除）、`source` 枚举 `manual`/`ocr`
 - **`categories` 是全局公共目录（定死）**：`parent_id` 为 NULL = 顶层大类，非 NULL = 子类；
   由迁移 `2026_10_01_000001` 写入 **80 条（14 顶层 + 66 子类）**；**没有 ledger_id、没有唯一约束**（改为只读接口，不允许用户增删改）
+- **`ledger_members`**：唯一约束 `(ledger_id, user_id)`；`role` 枚举 `owner`/`admin`/`member`
+  - 账本所有者（`ledgers.owner_id`）必定有一条 `role = owner` 的成员行（新建账本时自动写入）
+  - `admin`/`member` 通过后续"账本协同邀请"功能添加
 - `accounts` 唯一约束 **`(user_id, name)`**（同一用户下账户名不重复，不同用户可同名）
 - `accounts` 属于**个人**（"我用什么付款"），跨账本复用；`transactions.account_id` 为 `ON DELETE SET NULL`
 - `transactions.category_id` 同样 `ON DELETE SET NULL`，但记账时**只能选子类**（叶子节点）
 - `accounts.opening_balance` 字段保留但**不做余额功能**（不暴露、不计算）
-- `transactions.type` 目前只有 `income`/`expense`，**前端还有"转账"类型，待扩展**
-- `transactions` 模型**尚未加 `$fillable`**（阶段 4 写流水接口时必须先加，否则 MassAssignmentException）
+- `transactions.type` 只有 `income`/`expense`；**转账已决定不做**（账本只统计收支，2026-10 决定）
+- `transactions` 模型已加 `$fillable` + `casts`（2026-10）
 - ⚠️ **Seeder 依赖迁移**：`DemoSeeder` 用 `Category::where(...)->whereNotNull('parent_id')->firstOrFail()` 从全局目录取分类，
   所以**必须先跑迁移、再跑 seed**（`migrate:fresh --seed` 顺序天然正确）
 
 **演示数据（DemoSeeder，可重复执行，用 `firstOrCreate`/`updateOrCreate`）：**
 ```
 4 用户（林知栖/陈先生/林小满/苏外婆，密码统一 password）
-1 家庭（林氏一家）
-3 账本（家庭账本 / 个人私密账本 / 海岛游专项基金）
+3 账本（林氏一家 账本 / 个人私密账本 / 海岛游专项基金）
+9 条账本成员（共享账本各 4 人：lin=owner, chen=admin, child/elder=member；个人账本 1 人）
 7 账户（属于林知栖个人）、80 分类（全局目录，来自迁移）、14 流水、1 附件
 ```
 
@@ -212,8 +219,8 @@ c142345  docs: 补齐项目记忆（阶段3已完成项/关键决策/踩坑/编�
 ## 6. 前端盘点（需求来源）
 
 ### 现状
-- **纯静态，零 API 调用，尚未接入后端**（JWT 也还没接）
-- 全局状态 `src/stores/ledger.ts`：一个用户可有多个账本（家庭/个人/基金），**切换账本是全局的** → 几乎所有接口都要带 `ledger_id`
+- 全局状态 `src/stores/ledger.ts`：一个用户可有多个账本，**切换账本是全局的** → 几乎所有接口都要带 `ledger_id`
+- ⚠️ 本节"纯静态、零 API"是**重构前**的描述；实际进度见第 0 节与第 7 节（登录/注册/账本/成员/分类树已接后端）
 - 注意：真正带登录逻辑的是另一个前端 `Mosaic-Frontend`（配 Node 后端用的），毕设主线前端是 `MosaicwithAi`
 
 ### 页面与数据需求
@@ -230,7 +237,8 @@ c142345  docs: 补齐项目记忆（阶段3已完成项/关键决策/踩坑/编�
 | Login 登录 | 未挂载 | 手机号/邮箱 + 密码 |
 
 ### 前端待补的表（数据库还没建）
-`ledger_members`（账本成员权限）、`budgets`（预算额度）、`transaction_items`（票据子明细）、`recurring_transactions`（周期性收支）、`user_settings`（薪资/偏好）、`settlements`（分摊清算）、`invitations`（邀请）、`activity_logs`（动态流）
+`budgets`（预算额度）、`transaction_items`（票据子明细）、`recurring_transactions`（周期性收支）、`user_settings`（薪资/偏好）、`settlements`（分摊清算）、`invitations`（邀请）、`activity_logs`（动态流）
+（`ledger_members` 已于 2026-10 建好；`families`/`family_members` 已删除）
 
 ---
 
@@ -306,31 +314,31 @@ c142345  docs: 补齐项目记忆（阶段3已完成项/关键决策/踩坑/编�
 | GET | `/api/auth/me` | ✅ | 当前登录用户 |
 | POST | `/api/auth/logout` | ✅ | 退出（token 作废） |
 | POST | `/api/auth/refresh` | ✅ | 刷新（旧 token 作废） |
-| GET | `/api/ledgers` | ✅ | 我创建的 + 我加入家庭的账本列表 |
-| POST | `/api/ledgers` | ✅ | 创建账本（家庭成员才能建家庭账本，否则 403） |
-| GET | `/api/ledgers/{id}` | ✅ | 账本详情（不存在 404 / 非我 403） |
-| PUT | `/api/ledgers/{id}` | ✅ | 改账本（仅所有者；`sometimes` 局部更新） |
-| DELETE | `/api/ledgers/{id}` | ✅ | 删账本（仅所有者 + `confirm:true` 二次确认；事务级联删流水/分类/附件，**不动账户**） |
+| GET | `/api/ledgers` | ✅ | 我拥有的 + **我被加入为成员**的账本；带 `members_count` |
+| POST | `/api/ledgers` | ✅ | 创建账本（自动写入 `role=owner` 的成员行） |
+| GET | `/api/ledgers/{id}` | ✅ | 账本详情（所有者或成员可看，否则 404） |
+| PUT | `/api/ledgers/{id}` | ✅ | 改账本（**仅 `owner_id`**；`sometimes` 局部更新） |
+| DELETE | `/api/ledgers/{id}` | ✅ | 删账本（**仅 `owner_id`** + `confirm:true`；事务级联删流水/附件/成员关系，**不动账户和分类**） |
 | GET | `/api/accounts` | ✅ | 我的支付账户（属于个人，非账本） |
 | POST | `/api/accounts` | ✅ | 新增账户（同一用户下重名 422） |
 | PUT | `/api/accounts/{id}` | ✅ | 改账户（`Rule::unique` + `ignore`） |
 | DELETE | `/api/accounts/{id}` | ✅ | 删账户（**决策 B**：被流水引用时需 `confirm:true`，否则 422 + 引用数量；未被引用可直接删） |
-| GET | `/api/ledgers/{id}/categories` | ❌ | ~~账本下的分类~~ **已废弃**（分类改为全局目录，见下） |
-| POST | `/api/ledgers/{id}/categories` | ❌ | ~~新增分类~~ **已废弃**（目录定死，不允许增删改） |
-| PUT | `/api/ledgers/{id}/categories/{categoryId}` | ❌ | ~~改分类~~ **已废弃** |
-| DELETE | `/api/ledgers/{id}/categories/{categoryId}` | ❌ | ~~删分类~~ **已废弃** |
 | GET | `/api/categories?type=expense\|income` | ✅ | **分类树（全局两级目录，只读）**：返回顶层数组，每项含 `children`；不传 `type` 返回收支全部；支出排在收入前 |
-| GET | `/api/families/{familyId}/members` | ✅ | 家庭成员列表（仅家庭成员可看，否则 403）；返回含 `user:{id,name}` 和 `role` |
+| GET | `/api/ledgers/{id}/members` | ✅ | **账本成员列表**（所有者或成员可看，否则 403）；返回含 `user:{id,name}` 和 `role` |
+| GET | `/api/families/{familyId}/members` | ❌ | ~~家庭成员~~ **已废弃**（家庭分组概念已删除） |
+| GET/POST/PUT/DELETE | `/api/ledgers/{id}/transactions*` | 🟡 | **流水接口（阶段 4 进行中）**：路由已注册，`TransactionController` 方法待实现 |
 
 路由中间件：`auth:api`（用 `api` 守卫，即 JWT）。
 
-**权限规则（阶段 3 统一）**
+**权限规则（2026-10 成员模型重构后）**
 
 | 资源 | 读 | 写（增/改/删） |
 |---|---|---|
-| 账本 | 所有者 + 家庭成员 | 仅 `owner_id` |
-| 分类 | 所有者 + 家庭成员 | 仅 `owner_id` |
-| 账户 | 仅本人（`user_id`） | 仅本人 |
+| 账本 | 所有者 + 账本成员 | **仅账本所有者**（`ledgers.owner_id`） |
+| 账本成员 | 所有者 + 账本成员 | 后续"账本协同"功能 |
+| 账户 | 仅本人（`accounts.user_id`） | 仅本人 |
+| 分类 | 所有人（全局公共目录） | **只读，无人可写** |
+| 流水 | 所有者 + 账本成员 | 记账：所有者 + 成员；改删：自己记的 / 账本所有者 / `role` 为 `owner`/`admin` 的成员 |
 
 ### 8.1 已完成并提交（阶段 3）
 ```
@@ -344,7 +352,9 @@ c9ad67b  多语言基础：zh_CN 语言包 + SetLocale 中间件（Accept-Langua
 ```
 
 > 阶段 2（JWT）那批文件已在 commit `d6af93c` 入库。
-> 代码要点：账本 `index` 用 `where('owner_id',$user->id)->when(...orWhereIn('family_id',$familyIds))`；`show` 先 `find()` 判 404，再用 `owner_id` / `familyMemberships()` 判 403。
+> 代码要点：账本 `index` 用 `where('owner_id',$user->id)->orWhereIn('id',$memberLedgerIds)`（成员关系来自 `ledger_members`）；`show` 先 `find()` 判 404，再用 `owner_id` / `hasMember()` 判 403。
+> 成员权限要点：`LedgerMember` 的角色 `owner`/`admin`/`member`；**账本所有者必定有一条 `role=owner` 成员行**（新建账本时自动写入）；
+> 改/删别人的流水允许"自己记的 + 账本所有者 + 角色为 owner/admin 的成员"，**管理员不能删账本**。
 > 账户接口要点：`auth()->user()->accounts()->find($id)` 天然只能找到自己的账户（越权 id → 404）；`transactions.account_id` 为 `ON DELETE SET NULL`，删账户不毁记账历史。
 > 分类接口要点：路由嵌套 `/ledgers/{id}/categories`；`$ledger->categories()->find($categoryId)` 天然隔离**跨账本**访问（用账本1 的路径访问账本4 的分类 → 404）；`index` 用 `findViewableLedger`（家庭成员可读）、写操作用 `findOwnedLedger`（仅所有者）。
 > 尚未完成：**家庭成员管理**。
@@ -358,8 +368,8 @@ c9ad67b  多语言基础：zh_CN 语言包 + SetLocale 中间件（Accept-Langua
 | 1 | 模型 + 关联 + Seeder | ✅ |
 | 2 | JWT 认证 | ✅ |
 | 2.5 | 提交 JWT 那批代码 | ✅ `d6af93c` |
-| **3** | 基础资源 CRUD（ledgers/accounts/categories/成员）+ 归属校验(403) | 🟡 **进行中**：ledgers ✅、accounts ✅（属于个人）、categories ✅（属于账本）；**剩家庭成员管理** |
-| 4 | 记账核心（transactions CRUD + 筛选/分页/批量删除/子项/转账/周期） | ⬜ |
+| **3** | 基础资源 CRUD（ledgers/accounts/categories/成员）+ 归属校验(403) | ✅ **完成**：ledgers 5 接口、accounts 4 接口、categories（全局只读）、**账本成员 `GET /ledgers/{id}/members`**；成员模型已重构为账本级 |
+| 4 | 记账核心（transactions CRUD + 筛选/分页/批量删除） | 🟡 **进行中**：模型 `$fillable` ✅、6 条路由 ✅；**`TransactionController` 方法待实现** |
 | 5 | 聚合查询接口（dashboard / calendar / analytics） | ⬜ |
 | 6 | 附件与 OCR（上传 + OCR Service 可替换 + 确认入账） | ⬜ **与 AI 智能体共用 AiService** |
 | 7 | 家庭协同（邀请/额度/分摊/动态流） | ⬜ |
@@ -465,6 +475,9 @@ config/ai.php                              provider / model / key / 限流
 | ⚠️ **上面的分类决策 B 已作废**（2026-10 用户改为"分类定死"） | 分类改为**全局两级公共目录**（`2026_10_01_000001` 迁移）：删掉 `ledger_id`、加 `parent_id`、写入固定目录 80 条；接口只读（`GET /api/categories`），**用户不能增删改分类**。理由：分类是全系统统计口径，定死才能保证一致、避免历史流水分类悬空。`transactions.category_id` 的 `SET NULL` 保留（表级约束不变） |
 | **账本删除不级联删账户** | 账户是别人的东西，删账本凭什么删我的微信；事务里只删流水/分类/附件 |
 | **教学方式：用户手写代码，我讲解+验证** | 用户明确要求"不要直接帮我写完"，涉及写代码先问 |
+| **删除"家庭分组"，改为每账本自带成员**（2026-10 用户决定） | 原设计 families + family_members + `ledgers.family_id` 与"账本"概念**重合**（两套成员体系：分组级 vs 账本级）。改为 `ledger_members` 后：只有"账本"一个概念，成员是账本属性；**合租、旅行团、项目组都能用**，不再绑定"家庭"。代价：一次迁移（已做，数据已搬迁） |
+| **UI 文案中性化**：家庭协同 → 协作共享；家庭成员 → 账本成员 | 概念从"家庭"扩到"任意协作群体"，界面不应写死"家庭"。品牌名（Mosic 家庭智能财务管家）与登录页宣传语**保留**（产品调性，不是数据概念） |
+| **不做"转账"类型**（2026-10 决定） | 账本只统计收支。理由：转账不产生收支（左口袋进右口袋），并入收入会虚增收入与结余；单独建模又要加类型 + `transfer_account_id` + 前端双账户选择器，当前价值不足。前端 `Bills.vue` 的"转账"分段**待移除** |
 | **多语言用 `Accept-Language` 请求头，而不是全局切换**（2026-09） | 语言按**每个请求**决定：前端在请求头带 `Accept-Language`，中间件 `SetLocale` 切换。好处：用户切换语言无需重新登录/改后端配置；同一后端可同时服务中英日用户。已预留 `supported_locales = [zh_CN, en, ja]` |
 | **前端界面暂不做 i18n** | 界面文案目前硬编码中文；引入 `vue-i18n` 需把几百条文案抽成 key，工作量大 → 列"未来展望"。当前多语言只覆盖**后端消息**（校验提示等） |
 
