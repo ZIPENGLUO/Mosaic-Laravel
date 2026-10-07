@@ -30,7 +30,7 @@
 AI 生成的家庭记账前端（Vue3），配一套 Laravel 9 后端，做毕业设计。
 
 **当前进度**
-- **后端**：阶段 1（模型+关联+Seeder）✅、阶段 2（JWT 认证）✅、阶段 3 基础资源 CRUD —— 账本 5 接口 ✅、账户 4 接口 ✅（属于个人）、分类 4 接口 ✅（属于账本）；剩**家庭成员管理**。另已补**多语言基础**（zh_CN + `Accept-Language`）。
+- **后端**：阶段 1（模型+关联+Seeder）✅、阶段 2（JWT 认证）✅、阶段 3 基础资源 CRUD —— 账本 5 接口 ✅、账户 4 接口 ✅（属于个人）、**分类改为全局公共目录**（只读 `GET /api/categories`）、家庭成员列表 ✅（`GET /api/families/{id}/members`）。另已补**多语言基础**（zh_CN + `Accept-Language`）。
 - **前端**（`MosaicwithAi`）：**已开始对接后端** —— API 客户端（axios + 拦截器）✅、登录态 store ✅、路由守卫 ✅、登录页（按 `stitch_ui` 设计稿）✅、注册页 ✅、侧栏真实用户 + 退出 ✅、账本列表接 `GET /api/ledgers` ✅。其他页面（首页/日历/账目/统计/家庭/设置/OCR）**仍是静态 mock**。
 
 ---
@@ -146,18 +146,19 @@ c142345  docs: 补齐项目记忆（阶段3已完成项/关键决策/踩坑/编�
 
 ## 5. 数据库现状
 
-**表结构状态（13 个迁移 / 13 张表）**
+**表结构状态（14 个迁移 / 13 张表）**
 
 | 环境 | 数据库 | 迁移 | 数据 | 状态 |
 |---|---|---|---|---|
-| 自己电脑 | 本地 MySQL，库 `laravel`，账号 `root` | **13** | ✅ | ✅ 最新（含账户归属 + 分类删除策略重构） |
-| 阿里云服务器 | 服务器 MySQL，账号 `myapp_user` | 11 | ✅ | ⏸ 落后两个迁移（按"暂不更新"决策，等统一部署） |
-| GitHub 仓库 | — | **13 个文件** | — | ✅ |
+| 自己电脑 | 本地 MySQL，库 `laravel`，账号 `root` | **14** | ✅ | ✅ 最新（含账户归属、分类全局目录） |
+| 阿里云服务器 | 服务器 MySQL，账号 `myapp_user` | 11 | ✅ | ⏸ 落后三个迁移（按"暂不更新"决策，等统一部署） |
+| GitHub 仓库 | — | **14 个文件** | — | ✅ |
 | 公司电脑 | 本地 MySQL，账号 `root` | 4 | ⬜ | 需 `git pull` + `migrate` + `db:seed` |
 
-> ⚠️ 两次待补迁移（**任何环境拉取代码后都必须跑 `php artisan migrate`**，否则表结构与代码不匹配）：
+> ⚠️ **待补迁移（任何环境拉取代码后都必须跑 `php artisan migrate`**，否则表结构与代码不匹配）：
 > - `2026_09_10_000008_migrate_accounts_to_user_ownership`（账户改为属于个人）
 > - `2026_09_10_000009_migrate_transactions_category_id_to_null_on_delete`（删分类时流水置 NULL）
+> - `2026_10_01_000001_convert_categories_to_global_hierarchy`（**分类改为全局两级目录**；⚠️ `down()` 直接抛异常，不可回滚，只能恢复备份）
 
 **13 张表：**
 
@@ -176,7 +177,7 @@ c142345  docs: 补齐项目记忆（阶段3已完成项/关键决策/踩坑/编�
 | ledgers | owner_id | users.id |
 | ledgers | family_id | families.id（NULL = 个人账本） |
 | accounts | **user_id** | users.id（⚠️ 2026-09 改为属于个人，原为 ledger_id） |
-| categories | ledger_id | ledgers.id |
+| categories | **parent_id** | categories.id（⚠️ 2026-10 起为**全局两级目录**，已删 `ledger_id`） |
 | transactions | ledger_id | ledgers.id |
 | transactions | account_id | accounts.id（可空，删账户时置 NULL） |
 | transactions | category_id | categories.id（可空，删分类时置 NULL） |
@@ -187,20 +188,23 @@ c142345  docs: 补齐项目记忆（阶段3已完成项/关键决策/踩坑/编�
 
 **业务表设计要点：**
 - `transactions` 有 `deleted_at`（软删除）、`source` 枚举 `manual`/`ocr`
-- `categories` 有 `type` 枚举 `income`/`expense`，唯一约束 `(ledger_id, type, name)`
+- **`categories` 是全局公共目录（定死）**：`parent_id` 为 NULL = 顶层大类，非 NULL = 子类；
+  由迁移 `2026_10_01_000001` 写入 **80 条（14 顶层 + 66 子类）**；**没有 ledger_id、没有唯一约束**（改为只读接口，不允许用户增删改）
 - `accounts` 唯一约束 **`(user_id, name)`**（同一用户下账户名不重复，不同用户可同名）
 - `accounts` 属于**个人**（"我用什么付款"），跨账本复用；`transactions.account_id` 为 `ON DELETE SET NULL`
-- `categories` 属于**账本**（记账的聚合维度），`icon`/`sort_order` 可选；`transactions.category_id` 同样 `ON DELETE SET NULL`（决策 B）
+- `transactions.category_id` 同样 `ON DELETE SET NULL`，但记账时**只能选子类**（叶子节点）
 - `accounts.opening_balance` 字段保留但**不做余额功能**（不暴露、不计算）
 - `transactions.type` 目前只有 `income`/`expense`，**前端还有"转账"类型，待扩展**
 - `transactions` 模型**尚未加 `$fillable`**（阶段 4 写流水接口时必须先加，否则 MassAssignmentException）
+- ⚠️ **Seeder 依赖迁移**：`DemoSeeder` 用 `Category::where(...)->whereNotNull('parent_id')->firstOrFail()` 从全局目录取分类，
+  所以**必须先跑迁移、再跑 seed**（`migrate:fresh --seed` 顺序天然正确）
 
 **演示数据（DemoSeeder，可重复执行，用 `firstOrCreate`/`updateOrCreate`）：**
 ```
 4 用户（林知栖/陈先生/林小满/苏外婆，密码统一 password）
 1 家庭（林氏一家）
 3 账本（家庭账本 / 个人私密账本 / 海岛游专项基金）
-7 账户（属于林知栖个人）、13 分类、14 流水、1 附件
+7 账户（属于林知栖个人）、80 分类（全局目录，来自迁移）、14 流水、1 附件
 ```
 
 ---
@@ -257,7 +261,8 @@ c142345  docs: 补齐项目记忆（阶段3已完成项/关键决策/踩坑/编�
     - `update`：仅所有者；`sometimes` 规则支持局部更新；`$ledger->update($data)`
     - `destroy`：仅所有者 + **`confirm:true` 二次确认**（未确认返回 422 并附关联数量）；`DB::transaction` 级联删除
 15. **账户接口 4 个**（`AccountController`）：`/api/accounts` 不嵌套 —— 账户属于个人（见第 10 节决策）。`destroy` 用**决策 B**：被流水引用时需 `confirm:true`
-16. **分类接口 4 个**（`CategoryController`）：`/api/ledgers/{id}/categories` **嵌套**在账本下（分类属于账本）；`index` 支持 `?type=expense` 筛选；唯一约束三维 `(ledger_id, type, name)`；`destroy` 用**决策 B**
+16. **分类接口（已重构为全局只读目录）**：`GET /api/categories?type=expense|income` 返回两级分类树（顶层 + `children`）；旧的 `/api/ledgers/{id}/categories` 四个 CRUD 已删除；`Category` 模型去掉 `ledger_id`，新增 `parent()`/`children()` 与 `topLevel()`/`leaf()` 作用域
+17. **家庭成员列表**：`GET /api/families/{familyId}/members`（仅家庭成员可看，否则 403；返回含 `user:{id,name}`、`role`）
 17. **路由模块化扩展**：新增 `routes/api/ledger.php`、`routes/api/account.php`、`routes/api/category.php`，`routes/api.php` 里 require
 18. **两次归属/删除策略重构（迁移）**：
     - `..._000008`：`accounts.user_id` 取代 `ledger_id`；`transactions.account_id` 改可空 + `ON DELETE SET NULL`
@@ -310,10 +315,12 @@ c142345  docs: 补齐项目记忆（阶段3已完成项/关键决策/踩坑/编�
 | POST | `/api/accounts` | ✅ | 新增账户（同一用户下重名 422） |
 | PUT | `/api/accounts/{id}` | ✅ | 改账户（`Rule::unique` + `ignore`） |
 | DELETE | `/api/accounts/{id}` | ✅ | 删账户（**决策 B**：被流水引用时需 `confirm:true`，否则 422 + 引用数量；未被引用可直接删） |
-| GET | `/api/ledgers/{id}/categories` | ✅ | 账本下的分类（支持 `?type=income\|expense` 筛选；家庭成员可读） |
-| POST | `/api/ledgers/{id}/categories` | ✅ | 新增分类（`name`+`type` 必填；`in:income,expense`；唯一约束 `(ledger_id,type,name)`） |
-| PUT | `/api/ledgers/{id}/categories/{categoryId}` | ✅ | 改分类（`sometimes` + `ignore` 排除自己） |
-| DELETE | `/api/ledgers/{id}/categories/{categoryId}` | ✅ | 删分类（**决策 B**：被流水引用需 `confirm:true`；删除后流水 `category_id` 置 NULL） |
+| GET | `/api/ledgers/{id}/categories` | ❌ | ~~账本下的分类~~ **已废弃**（分类改为全局目录，见下） |
+| POST | `/api/ledgers/{id}/categories` | ❌ | ~~新增分类~~ **已废弃**（目录定死，不允许增删改） |
+| PUT | `/api/ledgers/{id}/categories/{categoryId}` | ❌ | ~~改分类~~ **已废弃** |
+| DELETE | `/api/ledgers/{id}/categories/{categoryId}` | ❌ | ~~删分类~~ **已废弃** |
+| GET | `/api/categories?type=expense\|income` | ✅ | **分类树（全局两级目录，只读）**：返回顶层数组，每项含 `children`；不传 `type` 返回收支全部；支出排在收入前 |
+| GET | `/api/families/{familyId}/members` | ✅ | 家庭成员列表（仅家庭成员可看，否则 403）；返回含 `user:{id,name}` 和 `role` |
 
 路由中间件：`auth:api`（用 `api` 守卫，即 JWT）。
 
@@ -454,7 +461,8 @@ config/ai.php                              provider / model / key / 限流
 | **不做账户余额功能** | 个人账户模型下"余额算哪个账本的"无法自洽；`opening_balance` 字段保留但接口不暴露、前端不显示 |
 | **删账户不毁记账历史** | `transactions.account_id` 改 `ON DELETE SET NULL`（付款方式已删除，流水保留） |
 | **被引用的账户"二次确认后可删"**（决策 B，2026-09 用户决定） | 422 拦住默认删除并回报引用数量；带 `confirm:true` 则真删，关联流水 `account_id` 置 NULL。权衡：允许用户清理不用的支付方式（如已注销的卡），代价是历史流水的付款方式丢失 → **前端必须把 NULL 显示为"已删除"**。（备选方案 A"永不允许删"因体验僵化被否） |
-| **被引用的分类同样"二次确认后可删"**（决策 B 保持一致） | 与账户同策略：迁移 `..._000009` 把 `transactions.category_id` 改为 `ON DELETE SET NULL`；删除后流水显示"未分类"。**理由：两套删除规则会让阶段 4 的流水接口难以维护** |
+| **被引用的分类同样"二次确认后可删"**（决策 B，保持一致性） | 与账户同策略：迁移 `..._000009` 把 `transactions.category_id` 改为 `ON DELETE SET NULL`；删除后流水显示"未分类"。**理由：两套删除规则会让阶段 4 的流水接口难以维护** |
+| ⚠️ **上面的分类决策 B 已作废**（2026-10 用户改为"分类定死"） | 分类改为**全局两级公共目录**（`2026_10_01_000001` 迁移）：删掉 `ledger_id`、加 `parent_id`、写入固定目录 80 条；接口只读（`GET /api/categories`），**用户不能增删改分类**。理由：分类是全系统统计口径，定死才能保证一致、避免历史流水分类悬空。`transactions.category_id` 的 `SET NULL` 保留（表级约束不变） |
 | **账本删除不级联删账户** | 账户是别人的东西，删账本凭什么删我的微信；事务里只删流水/分类/附件 |
 | **教学方式：用户手写代码，我讲解+验证** | 用户明确要求"不要直接帮我写完"，涉及写代码先问 |
 | **多语言用 `Accept-Language` 请求头，而不是全局切换**（2026-09） | 语言按**每个请求**决定：前端在请求头带 `Accept-Language`，中间件 `SetLocale` 切换。好处：用户切换语言无需重新登录/改后端配置；同一后端可同时服务中英日用户。已预留 `supported_locales = [zh_CN, en, ja]` |
