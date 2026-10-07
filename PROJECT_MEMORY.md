@@ -1,6 +1,6 @@
 # Mosaic 家庭财务系统 — 项目记忆
 
-> 最后更新：**成员模型重构完成**（删除家庭分组 → 每账本自带成员 `ledger_members`）；前端已适配并拉取真实成员
+> 最后更新：**阶段 4 流水接口完成**（CRUD + 筛选 + 分页 + 批量删除，19 个用例实测通过）；成员模型已重构为账本级
 > 用途：记录项目全貌、进度、决策与待办，供后续开发/答辩参考
 
 ---
@@ -30,8 +30,8 @@
 AI 生成的家庭记账前端（Vue3），配一套 Laravel 9 后端，做毕业设计。
 
 **当前进度**
-- **后端**：阶段 1（模型+关联+Seeder）✅、阶段 2（JWT 认证）✅、阶段 3 基础资源 CRUD —— 账本 5 接口 ✅、账户 4 接口 ✅（属于个人）、**分类改为全局公共目录**（只读 `GET /api/categories`）、**账本成员列表 ✅（`GET /api/ledgers/{id}/members`）**。另已补**多语言基础**（zh_CN + `Accept-Language`）。**成员模型已重构**：删掉"家庭分组"，改为每个账本自带成员（`ledger_members`）。
-- **前端**（`MosaicwithAi`）：**已开始对接后端** —— API 客户端（axios + 拦截器）✅、登录态 store ✅、路由守卫 ✅、登录页（按 `stitch_ui` 设计稿）✅、注册页 ✅、侧栏真实用户 + 退出 ✅、账本列表接 `GET /api/ledgers` ✅。其他页面（首页/日历/账目/统计/家庭/设置/OCR）**仍是静态 mock**。
+- **后端**：阶段 1（模型+关联+Seeder）✅、阶段 2（JWT 认证）✅、**阶段 3 基础资源 CRUD ✅**（账本 5 接口、账户 4 接口、分类全局只读、账本成员）、**阶段 4 流水接口 ✅**（CRUD + 筛选 + 分页 + 批量删除）。另已补**多语言基础**（zh_CN + `Accept-Language`）与 **JSON 中文不转义**。**成员模型已重构**：删掉"家庭分组"，改为每个账本自带成员（`ledger_members`）。
+- **前端**（`MosaicwithAi`）：API 客户端（axios + 拦截器）✅、登录态 store ✅、路由守卫 ✅、登录页/注册页 ✅、侧栏真实用户 + 退出 ✅、账本列表 + **账本成员**接后端 ✅、快速记账弹窗接真实**分类树 + 账户** ✅。**待做**：Bills/Home/Calendar/Analytics 接真实流水接口（阶段 10）。
 
 ---
 
@@ -324,7 +324,24 @@ c142345  docs: 补齐项目记忆（阶段3已完成项/关键决策/踩坑/编�
 | GET | `/api/categories?type=expense\|income` | ✅ | **分类树（全局两级目录，只读）**：返回顶层数组，每项含 `children`；不传 `type` 返回收支全部；支出排在收入前 |
 | GET | `/api/ledgers/{id}/members` | ✅ | **账本成员列表**（所有者或成员可看，否则 403）；返回含 `user:{id,name}` 和 `role` |
 | GET | `/api/families/{familyId}/members` | ❌ | ~~家庭成员~~ **已废弃**（家庭分组概念已删除） |
-| GET/POST/PUT/DELETE | `/api/ledgers/{id}/transactions*` | 🟡 | **流水接口（阶段 4 进行中）**：路由已注册，`TransactionController` 方法待实现 |
+| GET/POST/PUT/DELETE | `/api/ledgers/{id}/transactions*` | ✅ | **流水接口（阶段 4 已完成）**：列表（筛选+分页）、详情、记账、修改、删除（软删）、批量删除 |
+
+**流水接口明细**（`TransactionController`，6 个方法）
+
+| 方法 | 路径 | 说明 |
+|---|---|---|
+| GET | `/api/ledgers/{id}/transactions` | 筛选：`from`/`to`/`type`/`account_id`/`category_id`/`created_by`/`keyword`/`per_page`；返回 Laravel 分页结构（`data.data` 是当页列表） |
+| GET | `/api/ledgers/{id}/transactions/{txId}` | 详情（含 account/category/creator） |
+| POST | `/api/ledgers/{id}/transactions` | 记账 |
+| PUT | `/api/ledgers/{id}/transactions/{txId}` | 修改（`sometimes` 局部更新） |
+| DELETE | `/api/ledgers/{id}/transactions/{txId}` | 删除（**软删**，打 `deleted_at`） |
+| POST | `/api/ledgers/{id}/transactions/batch-delete` | 批量删除（body `{ids:[...]}`；**含无权项则整体 422**） |
+
+**记账的 3 条业务校验**（`exists` 规则管不了的，必须手写）
+1. `account_id` 必须是**自己的**账户（账户属于个人）→ 否则 422「不能使用他人的支付账户」
+2. `category_id` 必须是**子类**（`parent_id` 非空）→ 否则 422「请选择具体的子分类」
+3. `category.type` 必须和流水 `type` **一致** → 否则 422「分类的收支类型与记账类型不一致」
+   另：`amount` 必须 `min:0.01`（迁移里注明"金额 > 0 由应用层校验"，数据库无约束）
 
 路由中间件：`auth:api`（用 `api` 守卫，即 JWT）。
 
@@ -367,7 +384,7 @@ c9ad67b  多语言基础：zh_CN 语言包 + SetLocale 中间件（Accept-Langua
 | 2 | JWT 认证 | ✅ |
 | 2.5 | 提交 JWT 那批代码 | ✅ `d6af93c` |
 | **3** | 基础资源 CRUD（ledgers/accounts/categories/成员）+ 归属校验(403) | ✅ **完成**：ledgers 5 接口、accounts 4 接口、categories（全局只读）、**账本成员 `GET /ledgers/{id}/members`**；成员模型已重构为账本级 |
-| 4 | 记账核心（transactions CRUD + 筛选/分页/批量删除） | 🟡 **进行中**：模型 `$fillable` ✅、6 条路由 ✅；**`TransactionController` 方法待实现** |
+| 4 | 记账核心（transactions CRUD + 筛选/分页/批量删除） | ✅ **完成**（转账不做） |
 | 5 | 聚合查询接口（dashboard / calendar / analytics） | ⬜ |
 | 6 | 附件与 OCR（上传 + OCR Service 可替换 + 确认入账） | ⬜ **与 AI 智能体共用 AiService** |
 | 7 | 家庭协同（邀请/额度/分摊/动态流） | ⬜ |
