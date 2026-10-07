@@ -4,11 +4,11 @@ use App\Http\Controllers\CategoryController;
 use Illuminate\Support\Facades\Route;
 
 /*
-| 收支分类：属于账本，所以嵌套在账本下（和"账户属于个人"相反）
+| 收支分类：**全局公共目录**（不属于账本、不属于用户），定死，只读
+|
+| 旧设计是 /api/ledgers/{id}/categories 下的一整套 CRUD，
+| 现已改为全局两级目录，不再需要按账本区分，也不再允许用户增删改。
 */
 Route::middleware('auth:api')->group(function () {
-    Route::get('/ledgers/{id}/categories', [CategoryController::class, 'index']);
-    Route::post('/ledgers/{id}/categories', [CategoryController::class, 'store']);
-    Route::put('/ledgers/{id}/categories/{categoryId}', [CategoryController::class, 'update']);
-    Route::delete('/ledgers/{id}/categories/{categoryId}', [CategoryController::class, 'destroy']);
+    Route::get('/categories', [CategoryController::class, 'index']);
 });
