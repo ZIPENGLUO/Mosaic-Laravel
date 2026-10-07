@@ -11,6 +11,17 @@ class Transaction extends Model
     // SoftDeletes：删除时只打 deleted_at 标记，查询自动排除，数据不真丢
     use HasFactory, SoftDeletes;
 
+    protected $fillable = [
+        'ledger_id', 'account_id', 'category_id', 'created_by',
+        'type', 'amount', 'occurred_at', 'merchant', 'note', 'source',
+    ];
+
+    /** occurred_at 是日期时间，建议加 cast，方便前端拿到 ISO 格式 */
+    protected $casts = [
+        'occurred_at' => 'datetime',
+        'amount' => 'decimal:2',
+    ];
+
     /** 所属账本：transactions.ledger_id → ledgers.id */
     public function ledger()
     {

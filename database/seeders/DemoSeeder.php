@@ -5,9 +5,8 @@ namespace Database\Seeders;
 use App\Models\Account;
 use App\Models\Attachment;
 use App\Models\Category;
-use App\Models\FamilyMember;
-use App\Models\Family;
 use App\Models\Ledger;
+use App\Models\LedgerMember;
 use App\Models\Transaction;
 use App\Models\User;
 use Illuminate\Database\Seeder;
@@ -35,31 +34,36 @@ class DemoSeeder extends Seeder
             );
         }
 
-        // ========== 2. 家庭 + 成员 ==========
-        $family = Family::firstOrCreate(
-            ['name' => '林氏一家'],
-            ['owner_id' => $users['lin']->id]
-        );
-
-        foreach (['lin' => 'owner', 'chen' => 'admin', 'child' => 'member', 'elder' => 'member'] as $key => $role) {
-            FamilyMember::updateOrCreate(
-                ['family_id' => $family->id, 'user_id' => $users[$key]->id],
-                ['role' => $role]
-            );
-        }
-
-        // ========== 3. 三个账本 ==========
+        // ========== 2. 三个账本（不再有"家庭分组"，成员直接挂在账本上） ==========
         $familyLedger = Ledger::firstOrCreate(
             ['name' => '林氏一家 账本'],
-            ['owner_id' => $users['lin']->id, 'family_id' => $family->id, 'currency' => 'CNY']
+            ['owner_id' => $users['lin']->id, 'currency' => 'CNY']
         );
         $personalLedger = Ledger::firstOrCreate(
             ['name' => '个人私密账本'],
-            ['owner_id' => $users['lin']->id, 'family_id' => null, 'currency' => 'CNY']
+            ['owner_id' => $users['lin']->id, 'currency' => 'CNY']
         );
         $fundLedger = Ledger::firstOrCreate(
             ['name' => '海岛游专项基金'],
-            ['owner_id' => $users['lin']->id, 'family_id' => $family->id, 'currency' => 'CNY']
+            ['owner_id' => $users['lin']->id, 'currency' => 'CNY']
+        );
+
+        // ========== 3. 账本成员（每个账本自己一套） ==========
+        // 共享账本（家庭账本 / 专项基金）：4 人协作，角色不同
+        $sharedRoles = ['lin' => 'owner', 'chen' => 'admin', 'child' => 'member', 'elder' => 'member'];
+        foreach ([$familyLedger, $fundLedger] as $sharedLedger) {
+            foreach ($sharedRoles as $key => $role) {
+                LedgerMember::updateOrCreate(
+                    ['ledger_id' => $sharedLedger->id, 'user_id' => $users[$key]->id],
+                    ['role' => $role]
+                );
+            }
+        }
+
+        // 个人账本：只有自己
+        LedgerMember::updateOrCreate(
+            ['ledger_id' => $personalLedger->id, 'user_id' => $users['lin']->id],
+            ['role' => 'owner']
         );
 
         // ========== 4. 账户（属于个人：林知栖的支付方式，跨账本复用） ==========
@@ -162,10 +166,10 @@ class DemoSeeder extends Seeder
         // ========== 完成提示 ==========
         $this->command->info('演示数据已写入：');
         $this->command->info("  用户      : " . User::count());
-        $this->command->info("  家庭      : " . Family::count());
-        $this->command->info("  家庭账本  : {$familyLedger->name}");
+        $this->command->info("  账本      : " . Ledger::count() . "（{$familyLedger->name} / {$personalLedger->name} / {$fundLedger->name}）");
+        $this->command->info("  账本成员  : " . LedgerMember::count());
         $this->command->info("  账户      : " . count($accounts) . "（属于 " . $users['lin']->name . "）");
-        $this->command->info("  分类      : " . Category::count());
+        $this->command->info("  分类      : " . Category::count() . "（全局目录）");
         $this->command->info("  流水      : " . Transaction::where('ledger_id', $familyLedger->id)->count());
         $this->command->info("  附件      : " . Attachment::count());
     }
