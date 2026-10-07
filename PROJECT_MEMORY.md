@@ -261,22 +261,20 @@ c142345  docs: 补齐项目记忆（阶段3已完成项/关键决策/踩坑/编�
 12. **全链路实测通过**：登录→发 token、带 token 访问、无 token 401、密码错误 401、refresh 旧 token 作废、logout 作废
 13. **已提交**：commit `d6af93c jwtauth`（JWT 那批代码已入库，不再是工作区未提交状态）
 
-### 阶段 3：基础资源 CRUD（🟡 进行中）
+### 阶段 3：基础资源 CRUD（✅ 完成）
 14. **账本接口 5 个**（`LedgerController`）：
-    - `index`：返回"我创建的 + 我家庭的"账本
-    - `show`：先 `find()` 判 404，再判归属 403（所有者或家庭成员可看）
-    - `store`：创建；带 `family_id` 时校验是不是该家庭成员（否则 403）；`owner_id` 由后端填
-    - `update`：仅所有者；`sometimes` 规则支持局部更新；`$ledger->update($data)`
-    - `destroy`：仅所有者 + **`confirm:true` 二次确认**（未确认返回 422 并附关联数量）；`DB::transaction` 级联删除
+    - `index`：返回"我拥有的 + 我被加入为成员"的账本（带 `members_count`）
+    - `show`：先 `find()` 判 404，再判权限（所有者或账本成员）
+    - `store`：创建账本 + **自动写入 `role=owner` 的成员行**（事务）
+    - `update`：**仅所有者**；`sometimes` 规则支持局部更新
+    - `destroy`：**仅所有者** + **`confirm:true` 二次确认**（未确认返回 422 并附关联数量）；`DB::transaction` 级联删流水/附件/成员
 15. **账户接口 4 个**（`AccountController`）：`/api/accounts` 不嵌套 —— 账户属于个人（见第 10 节决策）。`destroy` 用**决策 B**：被流水引用时需 `confirm:true`
-16. **分类接口（已重构为全局只读目录）**：`GET /api/categories?type=expense|income` 返回两级分类树（顶层 + `children`）；旧的 `/api/ledgers/{id}/categories` 四个 CRUD 已删除；`Category` 模型去掉 `ledger_id`，新增 `parent()`/`children()` 与 `topLevel()`/`leaf()` 作用域
-17. **家庭成员列表**：`GET /api/families/{familyId}/members`（仅家庭成员可看，否则 403；返回含 `user:{id,name}`、`role`）
-17. **路由模块化扩展**：新增 `routes/api/ledger.php`、`routes/api/account.php`、`routes/api/category.php`，`routes/api.php` 里 require
-18. **两次归属/删除策略重构（迁移）**：
-    - `..._000008`：`accounts.user_id` 取代 `ledger_id`；`transactions.account_id` 改可空 + `ON DELETE SET NULL`
-    - `..._000009`：`transactions.category_id` 改可空 + `ON DELETE SET NULL`
-19. 待做：**家庭成员管理**
+16. **分类接口（全局只读目录）**：`GET /api/categories?type=expense|income` 返回两级分类树（顶层 + `children`）；旧的 `/api/ledgers/{id}/categories` 四个 CRUD 已删除；`Category` 模型去掉 `ledger_id`，新增 `parent()`/`children()` 与 `topLevel()`/`leaf()` 作用域
+17. **账本成员列表**：`GET /api/ledgers/{id}/members`（所有者或成员可看，否则 403；返回含 `user:{id,name}`、`role`）
+18. **路由模块化扩展**：`routes/api/` 下 `ledger`、`ledgermember`、`account`、`category`、`transaction`，由 `routes/api.php` require
+19. **成员模型重构（迁移 `..._000002`）**：删 `families`/`family_members`/`ledgers.family_id`，建 `ledger_members`（每账本自带成员），数据已搬迁
 20. **多语言基础**：`lang/zh_CN/`（校验消息中文）+ `SetLocale` 中间件（按 `Accept-Language` 切换）+ `config('app.supported_locales')`
+21. **JSON 中文不转义**：`ForceJsonUnicode` 中间件
 
 ### 前端对接（MosaicwithAi，2026-09 开始）
 
